@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,6 +20,25 @@ from PySide6.QtWidgets import (
 from formora.ai import client
 from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
+
+
+class _TestConnectionThread(QThread):
+    """后台执行 AI 连接测试，避免阻塞 UI 主线程（最长 20s）。"""
+    finished_ok = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, base_url: str, model: str, key: str):
+        super().__init__()
+        self._base_url = base_url
+        self._model = model
+        self._key = key
+
+    def run(self):
+        try:
+            summary = client.test_connection(self._base_url, self._model, self._key)
+            self.finished_ok.emit(summary)
+        except Exception as e:
+            self.failed.emit(str(e))
 
 
 class SettingsPage(QWidget):
@@ -83,11 +103,11 @@ class SettingsPage(QWidget):
         ai_card.add_layout(ai_form)
 
         ai_ops = QHBoxLayout()
-        test_btn = secondary_button("测试连接")
-        test_btn.clicked.connect(self._test_ai)
+        self.test_btn = secondary_button("测试连接")
+        self.test_btn.clicked.connect(self._test_ai)
         save_btn = primary_button("保存设置")
         save_btn.clicked.connect(self._save)
-        ai_ops.addWidget(test_btn)
+        ai_ops.addWidget(self.test_btn)
         ai_ops.addStretch(1)
         ai_ops.addWidget(save_btn)
         ai_card.add_layout(ai_ops)
@@ -139,18 +159,28 @@ class SettingsPage(QWidget):
         QMessageBox.information(self, "已保存", "设置已保存。")
 
     def _test_ai(self):
-        # 临时用当前界面值测试，不落盘
+        # 临时用当前界面值测试，不落盘；后台线程执行，避免阻塞 UI
         base_url = self.ai_base.text().strip()
         model = self.ai_model.text().strip()
         key = self.ai_key.text().strip() or self.state.config.get_ai_api_key()
         if not base_url or not model or not key:
             QMessageBox.warning(self, "提示", "请填写 API 地址、模型和密钥。")
             return
-        try:
-            summary = client.test_connection(base_url, model, key)
-            QMessageBox.information(self, "连接成功", f"模型响应正常。\n{summary}")
-        except FormoraError as e:
-            QMessageBox.critical(self, "连接失败", str(e))
+        self.test_btn.setEnabled(False)
+        self.test_btn.setText("测试中…")
+        self._test_thread = _TestConnectionThread(base_url, model, key)
+        self._test_thread.finished_ok.connect(self._on_test_ok)
+        self._test_thread.failed.connect(self._on_test_failed)
+        self._test_thread.finished.connect(
+            lambda: (self.test_btn.setEnabled(True), self.test_btn.setText("测试连接"))
+        )
+        self._test_thread.start()
+
+    def _on_test_ok(self, summary: str):
+        QMessageBox.information(self, "连接成功", f"模型响应正常。\n{summary}")
+
+    def _on_test_failed(self, msg: str):
+        QMessageBox.critical(self, "连接失败", msg)
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(

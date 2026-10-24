@@ -2,6 +2,8 @@
 
 import sys
 import tempfile
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -9,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from formora.services.config import Config
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="DPAPI 加密仅 Windows 支持")
 def test_config_defaults_and_roundtrip():
     tmp = Path(tempfile.mkdtemp()) / "config.json"
     c = Config(tmp)

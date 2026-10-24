@@ -45,6 +45,18 @@ def _require_mpl() -> None:
         raise ExternalDependencyError("matplotlib 不可用，无法生成图表。")
 
 
+
+def _normalize_x_values(x_values) -> list:
+    """x 轴值归一化：若全部为数值（int/float 且非 bool）则保留数值类型，
+    使 matplotlib 使用数值/时间轴，避免不等间隔的时间点被等距扭曲；
+    否则转字符串作为类别轴。"""
+    import numbers
+    vals = list(x_values)
+    if vals and all(isinstance(v, numbers.Real) and not isinstance(v, bool) for v in vals):
+        return vals
+    return [str(v) for v in vals]
+
+
 def _render_chart(
     kind: str, x_values, y_values, output_png, title, x_label, y_label
 ) -> Path:
@@ -55,7 +67,7 @@ def _render_chart(
     output = Path(output_png)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
-    xs = list(map(str, x_values))
+    xs = _normalize_x_values(x_values)
     if kind == "bar":
         ax.bar(xs, list(y_values), color="#4a90d9")
         ax.grid(True, axis="y", linestyle="--", alpha=0.5)
@@ -118,7 +130,7 @@ def generate_multi_line_chart(
     output = Path(output_png)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
-    xs = list(map(str, x_values))
+    xs = _normalize_x_values(x_values)
     colors = ["#4a90d9", "#e67e22", "#27ae60", "#e74c3c", "#8e44ad", "#16a085"]
     for i, (name, ys) in enumerate(series.items()):
         ax.plot(

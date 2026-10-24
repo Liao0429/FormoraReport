@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.10.0] - 2026-10-25
+
+### Fixed（第三轮多 Agent 评审：图表 / AI UX / 跨平台测试）
+
+- **图表 x 轴类型检测**：x 值若全部为数值则保留数值轴（`_normalize_x_values`），修复不等间隔时间点被等距扭曲、时间序列失真的问题；非数值仍转字符串作类别轴
+- **AI 测试连接不再阻塞 UI**：设置页「测试连接」改用后台 QThread 执行（原同步调用最长冻结 20 秒），期间按钮显示「测试中…」并禁用
+- **DPAPI 测试跨平台兼容**：`test_config_defaults_and_roundtrip` 加 `skipif(非 Windows)`，为 Linux/macOS CI 铺路
+
+### 兼容性
+
+- **289 项自动化测试通过**。
+- 行为变化：设置页「测试连接」改为异步；图表数值 x 轴不再强制转字符串。
+
 ## [2.9.0] - 2026-10-25
 
 ### Fixed（第二批 10 个多 Agent 评审：数据导入 / 模板解析 / AI 集成高危项）
