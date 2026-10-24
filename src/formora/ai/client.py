@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 
 from formora.core.errors import ExternalDependencyError
@@ -214,6 +215,27 @@ def _post_chat(
         raise ExternalDependencyError(f"AI 请求失败: {e}")
 
 
+def _parse_model_json(content) -> dict | list:
+    """宽松解析模型输出为 JSON：剥离 Markdown 围栏、提取首个 JSON 对象/数组。
+
+    兼容模型输出 ```json … ``` 或带前后缀文本的常见情况。
+    """
+    if content is None:
+        raise ValueError("模型返回内容为空")
+    text = str(content).strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    for open_ch, close_ch in (("{", "}"), ("[", "]")):
+        start = text.find(open_ch)
+        if start >= 0:
+            end_pos = text.rfind(close_ch)
+            if end_pos > start:
+                text = text[start:end_pos + 1]
+                break
+    return json.loads(text)
+
+
 def _chat_json(config: Config, messages: list[dict], temperature: float = 0.2) -> dict:
     ai = config.get("ai", {})
     base_url = (ai.get("base_url") or "").rstrip("/")
@@ -224,11 +246,18 @@ def _chat_json(config: Config, messages: list[dict], temperature: float = 0.2) -
 
     body = _post_chat(base_url, model, api_key, messages, temperature=temperature)
     try:
-        content = body["choices"][0]["message"]["content"]
-        return json.loads(content)
+        content = body["choices"][0]["message"].get("content")
+        # 部分 reasoning 模型把正文放在 reasoning_content
+        if content is None:
+            content = body["choices"][0]["message"].get("reasoning_content")
+        result = _parse_model_json(content)
     except Exception as e:
         raise ExternalDependencyError(f"AI 返回无法解析为 JSON: {e}")
-
+    if isinstance(result, list):
+        return {"fields": result}
+    if not isinstance(result, dict):
+        raise ExternalDependencyError("AI 返回格式异常：既不是对象也不是数组。")
+    return result
 
 SYSTEM_PROMPT = (
     "你是一名严谨的实验报告辅助助手。你根据用户提供的实验模板字段与原始素材，"

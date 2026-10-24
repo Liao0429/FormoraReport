@@ -59,11 +59,11 @@ class TestDataSourceDefaults:
 
 class TestTemplateInfo:
     def test_missing_core_fields_with_conclusion_alias(self):
-        """sections 只有「结论」时，'结论' 不算缺失，但 '实验结论' 仍缺失。"""
+        """sections 只有「结论」时，'结论' 与 '实验结论' 都被视为已覆盖（双向别名）。"""
         t = TemplateInfo(path=Path("x.docx"), sections={"结论": "九、结论"})
         missing = t.missing_core_fields
         assert "结论" not in missing
-        assert "实验结论" in missing
+        assert "实验结论" not in missing
 
     def test_missing_core_fields_all_present(self):
         t = TemplateInfo(
@@ -79,8 +79,8 @@ class TestTemplateInfo:
                 "实验结论": "八、实验结论",
             },
         )
-        # 模板缺"结论"章节（CORE_FIELDS 含"结论"）
-        assert t.missing_core_fields == ["结论"]
+        # 「结论」通过别名「实验结论」视为已覆盖，故全部不缺
+        assert t.missing_core_fields == []
 
 
 class TestReportTask:

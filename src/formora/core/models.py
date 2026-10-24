@@ -48,8 +48,20 @@ class TemplateInfo:
 
     @property
     def missing_core_fields(self) -> list[str]:
-        """任务书要求的核心字段中，模板缺失哪些。"""
-        found = {c for c in CORE_FIELDS if c in self.sections}
+        """任务书要求的核心字段中，模板缺失哪些。
+
+        注意：章节检测把「结论/总结/心得体会」都归一为 canonical 键「实验结论」，
+        因此「结论」通过别名映射检查，避免模板已有实验结论仍被误报缺失。
+        """
+        # 「结论」与「实验结论」视为同一章节（章节检测归一为 canonical「实验结论」），
+        # 双向判断：任一存在即认为该核心字段已覆盖，避免误报缺失。
+        alias_pairs = [("结论", "实验结论")]
+        covered = set()
+        for a, b in alias_pairs:
+            if a in self.sections or b in self.sections:
+                covered.add(a)
+                covered.add(b)
+        found = {c for c in CORE_FIELDS if c in self.sections or c in covered}
         return [c for c in CORE_FIELDS if c not in found]
 
 

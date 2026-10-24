@@ -37,6 +37,7 @@ def read_data(path: str | Path) -> DataSource:
         )
     kind_map = {
         ".csv": "csv",
+        ".tsv": "csv",
         ".xlsx": "xlsx",
         ".txt": "txt",
         ".md": "md",
@@ -58,28 +59,72 @@ def read_data(path: str | Path) -> DataSource:
 
 def _read_tabular(path: Path, kind: str) -> DataSource:
     import io
+    import math
 
     try:
         import pandas as pd
     except ImportError:
         raise ExternalDependencyError("pandas 未安装，无法读取表格数据。")
+
+    def _to_native(v):
+        """把 numpy 标量 / Timestamp / NaN 转成 Python 原生可序列化类型。"""
+        if v is None:
+            return None
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        # pandas Timestamp / datetime
+        if hasattr(v, "isoformat"):
+            try:
+                return v.isoformat()
+            except Exception:
+                pass
+        # numpy 标量
+        if hasattr(v, "item"):
+            try:
+                return v.item()
+            except Exception:
+                pass
+        return v
+
     try:
         if kind == "csv":
-            # 先按常见编码解码，避免中文乱码
-            df = pd.read_csv(io.StringIO(_read_text_auto(path)))
+            # 先按常见编码解码，避免中文乱码；sep=None 让 pandas 自动嗅探
+            # 逗号/分号/制表符分隔的 CSV，避免把分号/tab 文件读成单列。
+            text = _read_text_auto(path)
+            if not text.strip():
+                raise DocumentFormatError("文件内容为空，没有可读取的数据。")
+            df = pd.read_csv(io.StringIO(text), sep=None, engine="python")
         else:
             df = pd.read_excel(path)
+    except pd.errors.EmptyDataError:
+        raise DocumentFormatError("文件内容为空，没有可读取的数据。")
     except Exception as e:
         raise DocumentFormatError(f"读取表格失败（文件可能损坏或格式异常）: {e}")
 
     df = df.dropna(how="all")  # 去掉全空行
-    columns = [str(c).strip() for c in df.columns]
-    rows = df.where(df.notna(), None).to_dict("records")
-    # 标准化 key
-    norm_rows = []
-    for r in rows:
-        norm_rows.append({str(k).strip(): v for k, v in r.items()})
-    ds = DataSource(path=path, kind=kind, columns=columns, rows=norm_rows)
+    # 列名 strip 并处理重复：strip 后同名列追加 _2/_3，避免静默覆盖丢失数据
+    seen: dict[str, int] = {}
+    columns: list[str] = []
+    for raw in df.columns:
+        name = str(raw).strip()
+        if name == "nan":
+            name = "未命名列"
+        if name in seen:
+            seen[name] += 1
+            name = f"{name}_{seen[name]}"
+        else:
+            seen[name] = 1
+        columns.append(name)
+
+    # 用新列名构建 rows（避免 dict 推导 key 冲突）
+    rows: list[dict] = []
+    for _, row in df.iterrows():
+        d = {}
+        for col, name in zip(df.columns, columns):
+            d[name] = _to_native(row[col])
+        rows.append(d)
+
+    ds = DataSource(path=path, kind=kind, columns=columns, rows=rows)
     ds.summary = f"{len(rows)} 行 × {len(columns)} 列"
     return ds
 

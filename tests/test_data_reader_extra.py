@@ -73,3 +73,59 @@ class TestTabularCleaning:
         p.write_text(" 项目 ,数值\nA,1\n", encoding="utf-8-sig")
         ds = data_reader.read_data(p)
         assert ds.columns == ["项目", "数值"]
+
+
+class TestImportCompatibility:
+    """数据导入兼容性回归（20 个 Agent 评审高危项）。"""
+
+    def test_semicolon_separated_csv(self, tmp_path):
+        """分号分隔的 CSV 应被自动嗅探，而非读成单列。"""
+        p = tmp_path / "semi.csv"
+        p.write_text("项目;数值\nA;1\nB;2\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.columns == ["项目", "数值"]
+        assert len(ds.rows) == 2
+        assert ds.rows[0]["项目"] == "A"
+        assert ds.rows[0]["数值"] == 1
+
+    def test_tab_separated_csv(self, tmp_path):
+        """制表符分隔的 CSV 应被自动嗅探。"""
+        p = tmp_path / "tab.tsv"
+        p.write_text("项目\t数值\nA\t1\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.columns == ["项目", "数值"]
+        assert len(ds.rows) == 1
+
+    def test_duplicate_column_names_not_overwritten(self, tmp_path):
+        """strip 后重复的列名应加序号，不静默覆盖丢数据。"""
+        p = tmp_path / "dup.csv"
+        p.write_text("项目, 项目 \nA,B\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        # strip 后都是 "项目"，应产生 "项目" 和 "项目_2"
+        assert "项目" in ds.columns
+        assert "项目_2" in ds.columns
+        # 两列数据都保留
+        row = ds.rows[0]
+        assert row["项目"] == "A"
+        assert row["项目_2"] == "B"
+
+    def test_timestamp_serializable(self, tmp_path):
+        """Excel 日期列应转为 ISO 字符串（可 JSON 序列化）。"""
+        import json
+        import pandas as pd
+        p = tmp_path / "dates.xlsx"
+        df = pd.DataFrame({"时间": pd.to_datetime(["2026-01-01", "2026-01-02"])})
+        df.to_excel(p, index=False)
+        ds = data_reader.read_data(p)
+        # 应可 JSON 序列化，且值为 ISO 字符串
+        json.dumps(ds.rows)
+        assert isinstance(ds.rows[0]["时间"], str)
+        assert ds.rows[0]["时间"].startswith("2026")
+
+    def test_empty_csv_friendly_error(self, tmp_path):
+        """空 CSV 应报"文件内容为空"而非"文件损坏"。"""
+        p = tmp_path / "empty.csv"
+        p.write_text("", encoding="utf-8")
+        with pytest.raises(DocumentFormatError) as ei:
+            data_reader.read_data(p)
+        assert "空" in str(ei.value) or "没有可读取" in str(ei.value)
