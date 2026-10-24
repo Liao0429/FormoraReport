@@ -2,6 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.7.0] - 2026-10-25
+
+### Added（阶段2：FastAPI 后端 API 层——为微信小程序/App 铺路）
+
+- **REST API 服务**：新增 `src/formora/api.py`（FastAPI），复用 core 层纯 Python 引擎（模板解析/数据读取/自动映射/报告生成/PDF 转换/文本抽取），不依赖 Qt，与桌面端共享同一套逻辑
+- **端点**：
+  - `GET /api/health` 健康检查（返回版本）
+  - `POST /api/template/parse` 上传 DOCX 模板 → 占位符/章节/图片位
+  - `POST /api/data/read` 上传数据文件 → 列/预览行/行数
+  - `POST /api/mapping/auto` 自动映射
+  - `POST /api/report/generate` 生成 DOCX → task_id + 下载 URL
+  - `GET /api/report/{task_id}/download` 下载报告
+  - `POST /api/report/pdf` DOCX → PDF
+  - `POST /api/report/{task_id}/text` 抽取报告文本（供 AI 审查/预览）
+- **启动入口**：`api_server.py`（`python api_server.py --port 8000`），自带交互文档 `/docs`
+- **依赖**：新增 `requirements-api.txt`（fastapi/uvicorn/python-multipart，可选，不污染桌面端核心）
+- **测试**：新增 `tests/test_api.py`（TestClient，9 项：健康/模板/数据/生成/下载/文本/边界）
+
+### 兼容性
+
+- 桌面端功能完全不变；**268 项自动化测试通过**（新增 9 项 API 测试）。
+- API 已实测端到端：上传模板+数据 → 生成 → 下载（35765 字节合法 DOCX）→ 文本抽取全通。
+
 ## [2.6.0] - 2026-10-25
 
 ### Changed（阶段1跨平台化：让核心流程在 macOS/Linux 可跑通）

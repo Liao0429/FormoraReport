@@ -1,0 +1,7 @@
+# FormoraReport API 服务可选依赖（用于后端部署 / 小程序前端接入）
+# 桌面端核心功能不需要这些；如需启动 API 服务：
+#   pip install -r requirements-api.txt
+-r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
