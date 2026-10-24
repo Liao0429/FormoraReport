@@ -30,10 +30,12 @@ def read_data(path: str | Path) -> DataSource:
     if not path.exists():
         raise UserError(f"数据文件不存在: {path}")
     suffix = path.suffix.lower()
+    if suffix == ".xls":
+        raise DocumentFormatError(
+            "暂不支持旧版 .xls 格式。请在 Excel 中将文件另存为 .xlsx 后重试。")
     kind_map = {
         ".csv": "csv",
         ".xlsx": "xlsx",
-        ".xls": "xlsx",
         ".txt": "txt",
         ".md": "md",
         ".markdown": "md",

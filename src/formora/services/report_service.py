@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from formora.core import chart, generator, mapper
 from formora.core.errors import FormoraError
@@ -93,12 +92,20 @@ def auto_chart(state) -> str | None:
     xs = [str(r.get(x_col, i + 1)) for i, r in enumerate(data.rows)]
     ys = [float(r.get(y_col)) for r in data.rows]
     out_dir = _output_dir(state)
-    img = out_dir / f"{state.task.name}_图表.png"
+    img = out_dir / f"{sanitize_filename(state.task.name)}_图表.png"
     try:
         chart.generate_line_chart(xs, ys, img, title=f"{y_col} 数据图",
                                  x_label=x_col or "序号", y_label=y_col)
         return str(img)
-    except Exception:
+    except Exception as e:
+        # 记录失败原因，避免用户以为图表已插入（H6）
+        try:
+            import logging
+            logging.getLogger("formora").warning("自动图表生成失败: %s", e)
+            if hasattr(state, "task") and state.task is not None:
+                state.task.log("warning", "bug", f"自动图表生成失败: {e}")
+        except Exception:
+            pass
         return None
 
 
@@ -124,6 +131,19 @@ def image_placeholders(state, auto_chart_enabled: bool) -> set[str]:
     return s
 
 
+def _drop_uncovered_image_fields(context: dict, mappings, image_vars: dict) -> None:
+    """把未注入图片的图片字段从渲染上下文移除，避免 docxtpl 渲染出字面量 None。
+
+    当图片字段没有绑定图片、且自动图表未生成时，image_vars 不含该字段，
+    而 context 里是 None，jinja 会输出 "None"。这里直接 pop，让占位符保持原样空白。
+    """
+    covered = set(image_vars.keys())
+    for m in mappings:
+        if m.source_type == "image" and m.template_field in context:
+            if m.template_field not in covered:
+                context.pop(m.template_field, None)
+
+
 def _output_dir(state) -> Path:
     out_dir = Path(state.config.get("output_dir") or "").expanduser()
     if not out_dir.is_absolute() and out_dir == Path("."):
@@ -140,6 +160,16 @@ def _timestamp() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
+_INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
+
+
+def sanitize_filename(name: str, fallback: str = "未命名") -> str:
+    """过滤 Windows 文件名非法字符，避免任务名含 :?*<>| 等导致 OSError。"""
+    cleaned = "".join(ch for ch in (name or "").strip() if ch not in _INVALID_FILENAME_CHARS)
+    cleaned = cleaned.strip(" .")
+    return cleaned or fallback
+
+
 def _versioned_output(state, subdir: str = "", suffix: str = "输出") -> Path:
     """构造带时间戳的输出路径：<outdir>/[subdir/]<task>_<suffix>_<ts>.docx。
 
@@ -150,7 +180,8 @@ def _versioned_output(state, subdir: str = "", suffix: str = "输出") -> Path:
     if subdir:
         base = base / subdir
         base.mkdir(parents=True, exist_ok=True)
-    name = f"{state.task.name}_{suffix}_{_timestamp()}.docx"
+    safe_name = sanitize_filename(state.task.name)
+    name = f"{safe_name}_{suffix}_{_timestamp()}.docx"
     return base / name
 
 
@@ -167,6 +198,7 @@ def generate_single(state, row: dict | None = None, auto_chart: bool | None = No
         raise FormoraError("请先解析模板。")
     context = resolve_context(state, row=row)
     image_vars = collect_image_vars(state, _auto_chart_enabled(state, auto_chart))
+    _drop_uncovered_image_fields(context, state.mappings, image_vars)
     output = _versioned_output(state, suffix="输出")
     out_path = generator.generate_report(
         state.template.path, context, output,
@@ -195,19 +227,16 @@ def generate_batch(state, auto_chart: bool | None = None) -> tuple[list[str], li
     results: list[str] = []
     errors: list[str] = []
     for i, row in enumerate(data.rows):
-        ctx: dict[str, Any] = {}
+        # 复用统一映射解析，避免与单份生成逻辑分叉（含 text/constant 等所有类型）
+        ctx = mapper.resolve_values(state.mappings, row=row)
         for m in state.mappings:
-            if m.source_type == "column":
-                v = row.get(m.source_column)
-                ctx[m.template_field] = "" if v is None else str(v)
-            elif m.source_type == "constant":
-                ctx[m.template_field] = m.constant_value or ""
-            elif m.source_type == "image":
+            if m.source_type == "image":
                 ctx[m.template_field] = None
-        if data.is_tabular:
-            ctx["data_rows"] = data.rows
-        out = batch_dir / f"{state.task.name}_第{i + 1}行.docx"
+        # 批量时每份报告只含当前行数据，而非整表
+        ctx["data_rows"] = [row]
+        out = batch_dir / f"{sanitize_filename(state.task.name)}_第{i + 1}行.docx"
         try:
+            _drop_uncovered_image_fields(ctx, state.mappings, image_vars)
             generator.generate_report(state.template.path, ctx, out,
                                       image_vars=image_vars, template_info=state.template)
             results.append(str(out))

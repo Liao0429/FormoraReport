@@ -59,7 +59,8 @@ class SettingsPage(QWidget):
         ai_card = Card("AI 智能模式（可选）")
         ai_hint = hint_label(
             "AI 模式是可选增强，需你主动启用。启用后，生成内容会调用你配置的模型；"
-            "密钥仅保存在本机（DPAPI 加密），不会写入日志或上传。AI 不会在后台静默上传文档。")
+            "密钥不明文落盘、不进日志，但会作为认证凭据随每个 AI 请求发送到你配置的 API 服务器。"
+            "AI 不会在后台静默上传文档。")
         ai_card.add_widget(ai_hint)
         ai_form = QFormLayout()
         self.ai_enabled = QCheckBox("启用 AI 智能模式")

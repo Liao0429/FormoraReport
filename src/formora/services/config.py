@@ -90,8 +90,11 @@ class Config:
         return json.loads(json.dumps(DEFAULTS))
 
     def save(self):
+        """原子写配置：先写临时文件再替换，避免崩溃/断电损坏 config.json。"""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp = self.path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(str(tmp), str(self.path))
 
     def get(self, key: str, default=None):
         return self.data.get(key, default)

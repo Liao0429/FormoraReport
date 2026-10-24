@@ -169,6 +169,8 @@ def extract_fields(config: Config, materials_text: str, template_fields: list[st
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_msg},
     ])
+    if not isinstance(result, dict):
+        raise ExternalDependencyError("AI 返回结构异常：期望 JSON 对象但得到其他类型。")
     return result.get("fields", [])
 
 
@@ -186,6 +188,8 @@ def review_report(config: Config, report_text: str) -> list[dict]:
         {"role": "system", "content": "你是一名严谨的报告审查者，只依据给定内容判断，不臆测。"},
         {"role": "user", "content": user_msg},
     ])
+    if not isinstance(result, dict):
+        raise ExternalDependencyError("AI 返回结构异常：期望 JSON 对象但得到其他类型。")
     return result.get("issues", [])
 
 

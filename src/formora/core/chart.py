@@ -51,8 +51,10 @@ def _render_chart(kind: str, x_values, y_values, output_png, title, x_label, y_l
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     fig.tight_layout()
-    fig.savefig(str(output))
-    plt.close(fig)
+    try:
+        fig.savefig(str(output))
+    finally:
+        plt.close(fig)
     return output
 
 

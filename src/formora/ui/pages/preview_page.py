@@ -68,6 +68,16 @@ class PreviewPage(QWidget):
                 self, "AI 模式未启用",
                 "AI 审查需要在「设置 → AI 智能模式」中配置 API 地址、模型与密钥。")
             return
+        # 隐私确认：AI 审查会把整份报告文本发送到所配置的 API
+        if not cfg.get("privacy", {}).get("review_warning_shown"):
+            ret = QMessageBox.question(
+                self, "隐私提示",
+                "AI 审查会把当前报告的完整文本（含已填入的数据）发送到"
+                "你配置的模型 API。\n请确认你信任该 API 服务商。是否继续？")
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+            cfg.set("privacy", {**cfg.get("privacy", {}), "review_warning_shown": True})
+            cfg.save()
         try:
             from docx import Document
             doc = Document(self.state.output_path)

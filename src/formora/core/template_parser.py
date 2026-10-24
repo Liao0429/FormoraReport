@@ -10,7 +10,9 @@ from pathlib import Path
 from .errors import DocumentFormatError, ExternalDependencyError, UserError
 from .models import TableInfo, TemplateInfo
 
-_PLACEHOLDER_RE = re.compile(r"\{\{\s*([\w\u4e00-\u9fa5]+)\s*\}\}")
+# 占位符：{{ 字段名 }}。允许中英文、数字、空格、点、连字符、括号（如 {{学生 姓名}}、{{chart-1}}、{{实验名称(一)}}）。
+# 排除换行与花括号本身，保持 docxtpl/jinja 兼容。
+_PLACEHOLDER_RE = re.compile(r"\{\{\s*([^{}\n]+?)\s*\}\}")
 _LOOP_RE = re.compile(r"\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}")
 
 # 章节关键字 -> 规范化章节名
