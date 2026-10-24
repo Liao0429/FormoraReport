@@ -16,7 +16,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from formora.core import chart, data_reader, generator, mapper, template_parser, validator
+from formora.core import (
+    chart,
+    data_reader,
+    generator,
+    mapper,
+    template_parser,
+    validator,
+)
 from formora.core.errors import DocumentFormatError, UserError
 from formora.core.models import DataSource, FieldMapping
 

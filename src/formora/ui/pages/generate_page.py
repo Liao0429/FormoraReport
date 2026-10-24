@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -78,10 +80,8 @@ class GeneratePage(QWidget):
         if not self.state.output_path:
             return
         folder = os.path.dirname(self.state.output_path)
-        try:
-            os.startfile(folder)
-        except Exception:
-            subprocess.Popen(["explorer", folder])
+        # 跨平台打开文件夹（Windows 用 explorer，macOS Finder，Linux xdg-open）
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def _export_pdf(self):
         if not self.state.output_path:
@@ -102,19 +102,12 @@ class GeneratePage(QWidget):
         if not batch_dir or not os.path.isdir(batch_dir):
             QMessageBox.warning(self, "提示", "没有可用的批次目录。")
             return
-        from formora.core import pdf_exporter
+        from formora.services.report_service import batch_export_pdf
         docx_files = sorted(glob.glob(os.path.join(batch_dir, "*.docx")))
         if not docx_files:
             QMessageBox.warning(self, "提示", "批次目录里没有 DOCX 文件。")
             return
-        ok, failed = 0, []
-        for docx in docx_files:
-            try:
-                out = docx[:-5] + ".pdf"
-                pdf_exporter.export_pdf(docx, out)
-                ok += 1
-            except FormoraError as e:
-                failed.append(f"{os.path.basename(docx)}: {e}")
+        ok, failed = batch_export_pdf(docx_files)
         msg = f"✅ 已导出 {ok} 份 PDF"
         if failed:
             msg += f"\n\n失败 {len(failed)} 份：\n" + "\n".join(failed[:5])

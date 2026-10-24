@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from formora.core import data_reader, mapper, template_parser
 from formora.core.models import DataSource, ReportTask
-from formora.services.config import Config
 from formora.services import report_service
+from formora.services.config import Config
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 TEMPLATE = SAMPLES / "实验报告模板.docx"

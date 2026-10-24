@@ -1,0 +1,24 @@
+[run]
+source = formora
+branch = True
+omit =
+    src/formora/ui/pages/*
+    src/formora/ui/app.py
+    src/formora/ui/main_window.py
+    src/formora/ui/widgets.py
+    src/formora/ui/theme.py
+    src/formora/ui/window_effects.py
+    src/formora/ui/animations.py
+    src/formora/ui/app_state.py
+    main.py
+
+[report]
+show_missing = True
+skip_covered = True
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+
+[html]
+directory = htmlcov

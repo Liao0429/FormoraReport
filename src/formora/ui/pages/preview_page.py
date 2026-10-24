@@ -100,14 +100,8 @@ class PreviewPage(QWidget):
             cfg.set("privacy", {**cfg.get("privacy", {}), "review_warning_shown": True})
             cfg.save()
         try:
-            from docx import Document
-            doc = Document(self.state.output_path)
-            parts = [p.text for p in doc.paragraphs if p.text.strip()]
-            for i, table in enumerate(doc.tables):
-                parts.append(f"[表格 {i+1}]")
-                for row in table.rows:
-                    parts.append(" | ".join(c.text.strip() for c in row.cells))
-            report_text = "\n".join(parts)
+            from formora.services.report_reader import extract_report_text
+            report_text = extract_report_text(self.state.output_path)
         except Exception as e:
             QMessageBox.warning(self, "读取报告失败", str(e))
             return
@@ -147,21 +141,11 @@ class PreviewPage(QWidget):
             self.text_edit.setPlainText("（还没有可预览的输出文件）")
             return
         try:
-            from docx import Document
-            doc = Document(self.state.output_path)
-            parts = []
-            for p in doc.paragraphs:
-                if p.text.strip():
-                    parts.append(p.text)
-            for i, table in enumerate(doc.tables):
-                parts.append(f"[表格 {i+1}]")
-                for row in table.rows:
-                    parts.append(" | ".join(c.text for c in row.cells))
-            # 提示图片数量（文本预览无法展示图片，引导用户用 Word 查看排版）
-            if doc.inline_shapes:
-                parts.append(f"\n📷 报告包含 {len(doc.inline_shapes)} 张图片（文本预览不显示图片，请用 Word 打开查看排版效果）。")
-            parts.append(self._ai_sources_text())
-            self.text_edit.setPlainText("\n".join(parts))
+            from formora.services.report_reader import extract_report_text
+            base = extract_report_text(self.state.output_path)
+            if self._ai_sources_text():
+                base += "\n" + self._ai_sources_text()
+            self.text_edit.setPlainText(base)
         except Exception as e:
             self.text_edit.setPlainText(f"读取预览失败：{e}")
 

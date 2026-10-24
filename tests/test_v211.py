@@ -3,14 +3,14 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from docx import Document
+
 from formora.core import data_reader, mapper, template_parser
 from formora.core.models import ReportTask
-from formora.services.config import Config
 from formora.services import report_service
+from formora.services.config import Config
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 TEMPLATE = SAMPLES / "实验报告模板.docx"

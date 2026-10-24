@@ -293,3 +293,24 @@ def generate_batch(state, auto_chart: bool | None = None) -> tuple[list[str], li
     # 记录最新批次目录，供 UI 展示
     state.last_batch_dir = str(batch_dir)
     return results, errors
+
+
+def batch_export_pdf(docx_paths: list[str]) -> tuple[int, list[str]]:
+    """把多个 DOCX 串行转为 PDF（复用 LibreOffice 互斥锁，单份失败不中断）。
+
+    供桌面端「批量导出 PDF」按钮与后端 API 复用。
+    返回：(成功数, 失败信息列表["文件名: 错误"])
+    """
+    from formora.core import pdf_exporter
+    import os
+
+    ok = 0
+    failed: list[str] = []
+    for docx in docx_paths:
+        try:
+            out = os.path.splitext(docx)[0] + ".pdf"
+            pdf_exporter.export_pdf(docx, out)
+            ok += 1
+        except FormoraError as e:
+            failed.append(f"{os.path.basename(docx)}: {e}")
+    return ok, failed

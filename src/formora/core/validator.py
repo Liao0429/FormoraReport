@@ -3,10 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .models import FieldMapping, TemplateInfo, ValidationIssue
-
-CORE_FIELDS = ["实验名称", "实验目的", "实验环境", "实验步骤", "实验数据",
-               "实验结果", "问题分析", "实验结论", "结论"]
+from .models import CORE_FIELDS, FieldMapping, TemplateInfo, ValidationIssue
 
 
 def validate_mappings(

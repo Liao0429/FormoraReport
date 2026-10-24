@@ -15,7 +15,12 @@ except Exception:  # pragma: no cover
     _MPL_OK = False
 
 # 尝试加载中文字体，避免中文乱码（matplotlib 不可用时跳过）
-_FONT_CANDIDATES = ["Microsoft YaHei", "SimHei", "SimSun", "Arial Unicode MS", "DejaVu Sans"]
+# 候选覆盖 Windows（微软雅黑/黑体/宋体）与 Linux/服务端（Noto Sans CJK）等平台
+_FONT_CANDIDATES = [
+    "Microsoft YaHei", "SimHei", "SimSun", "Arial Unicode MS",
+    "Noto Sans CJK SC", "Noto Sans CJK", "WenQuanYi Zen Hei",
+    "DejaVu Sans",
+]
 if _MPL_OK:
     for _f in _FONT_CANDIDATES:
         try:

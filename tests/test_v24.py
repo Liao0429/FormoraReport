@@ -59,9 +59,10 @@ class TestMultiLineChart:
     def test_multi_line_length_mismatch(self, tmp_path):
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+        import pytest
+
         from formora.core import chart
         from formora.core.errors import DocumentFormatError
-        import pytest
         with pytest.raises(DocumentFormatError):
             chart.generate_multi_line_chart(
                 ["A", "B"], {"通道A": [1.0]}, tmp_path / "bad.png")
@@ -84,11 +85,12 @@ class TestDataRowsFormatted:
         """表格循环中 None 不应渲染为字面量 "None"。"""
         import sys
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+        from types import SimpleNamespace
+
+        from formora.core import template_parser
+        from formora.core.models import ReportTask
         from formora.services import report_service
         from formora.services.config import Config
-        from formora.core.models import ReportTask
-        from formora.core import template_parser
-        from types import SimpleNamespace
 
         cfg = Config(tmp_path / "config.json")
         cfg.set("output_dir", str(tmp_path / "out"))
@@ -108,12 +110,13 @@ class TestDataRowsFormatted:
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-        from formora.services import report_service
-        from formora.core.models import DataSource, ReportTask
-        from types import SimpleNamespace
-        from formora.services.config import Config
-        from formora.core import template_parser
         import tempfile
+        from types import SimpleNamespace
+
+        from formora.core import template_parser
+        from formora.core.models import DataSource, ReportTask
+        from formora.services import report_service
+        from formora.services.config import Config
 
         with tempfile.TemporaryDirectory() as td:
             cfg = Config(Path(td) / "config.json")

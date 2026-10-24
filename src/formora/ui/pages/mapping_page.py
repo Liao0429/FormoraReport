@@ -418,8 +418,8 @@ class MappingPage(QWidget):
             cfg.save()
 
         self._collect_mappings()
-        fields = [m.template_field for m in self.state.mappings
-                  if m.source_type != "image"]
+        from formora.services.ai_workflow import build_ai_fields
+        fields = build_ai_fields(self.state.mappings)
         materials = self._materials_text()
         if not materials.strip():
             QMessageBox.warning(self, "提示", "当前没有可用的实验素材文本。请先在「文档导入」页导入 TXT/MD/PDF 或表格数据。")
@@ -451,23 +451,8 @@ class MappingPage(QWidget):
 
     def _on_ai_done(self, result):
         self._set_busy(False)
-        by_field = {m.template_field: m for m in self.state.mappings}
-        applied = 0
-        confirmed = []
-        for item in result:
-            fname = item.get("field", "")
-            value = item.get("value", "")
-            needs = bool(item.get("needs_confirmation"))
-            m = by_field.get(fname)
-            if m is None or m.source_type == "image":
-                continue
-            m.source_type = "constant"
-            m.constant_value = value
-            # 来源追踪：记录 AI 依据与「待确认」标记
-            m.source = item.get("source", "")
-            m.needs_confirmation = needs
-            confirmed.append(f"{fname}" + ("（待确认）" if needs else ""))
-            applied += 1
+        from formora.services.ai_workflow import apply_ai_results
+        applied, confirmed = apply_ai_results(self.state.mappings, result)
         self.state.task.log("info", "system", f"AI 辅助填充 {applied} 个字段")
         self._fill_table()
         note = [

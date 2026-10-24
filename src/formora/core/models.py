@@ -1,6 +1,10 @@
 """核心数据结构。"""
 from __future__ import annotations
 
+# 任务书要求的核心章节字段（models 与 validator 共用，避免漂移）
+CORE_FIELDS = ["实验名称", "实验目的", "实验环境", "实验步骤", "实验数据",
+               "实验结果", "问题分析", "实验结论", "结论"]
+
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -33,10 +37,8 @@ class TemplateInfo:
     @property
     def missing_core_fields(self) -> list[str]:
         """任务书要求的核心字段中，模板缺失哪些。"""
-        core = ["实验名称", "实验目的", "实验环境", "实验步骤", "实验数据",
-                "实验结果", "问题分析", "实验结论", "结论"]
-        found = {c for c in core if c in self.sections}
-        return [c for c in core if c not in found]
+        found = {c for c in CORE_FIELDS if c in self.sections}
+        return [c for c in CORE_FIELDS if c not in found]
 
 
 @dataclass

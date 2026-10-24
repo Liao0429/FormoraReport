@@ -2,6 +2,32 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.5.0] - 2026-10-25
+
+### Added（第五轮作者视角多 Agent 评审：代码规范 / 跨平台 / 可移植性 / 测试质量）
+
+- **服务层解耦**：新增 `services/report_reader.py`（报告文本抽取）、`services/ai_workflow.py`（AI 结果落地映射），核心业务逻辑从 Qt 页面抽成纯函数，为后续后端 API / 移动端复用铺路
+- **批量导出复用**：`report_service.batch_export_pdf()` 把批量转 PDF 编排上提服务层，UI 只负责调用与弹窗
+- **测试基础设施**：新增 `tests/conftest.py`（公共 fixture）、`pytest.ini`、`.coveragerc`、`requirements-dev.txt`（pytest-cov/ruff/mypy）、`tests/README.md`
+- **跨平台文档**：新增 `docs/cross-platform-migration.md`，给出 FastAPI + uni-app（微信小程序/APK/iOS）分阶段改造路线图
+
+### Fixed（跨平台与可移植性）
+
+- **非 Windows 无法启动**：`config.py` 顶层 `import ctypes.wintypes` 改为函数内延迟导入 + `_IS_WINDOWS` 判断，macOS/Linux 不再 import 即崩
+- **打开输出文件夹跨平台崩溃**：`os.startfile`/`explorer` 改为 `QDesktopServices.openUrl`，非 Windows 平台不再抛 `FileNotFoundError`
+- **中文字体候选补 Linux**：`chart.py` 字体候选追加 `Noto Sans CJK SC`/`WenQuanYi Zen Hei`，Linux 服务端图表不再豆腐块
+- **版本号漂移**：`__version__` 由 2.1.0 修正为 2.5.0（与 CHANGELOG 对齐）
+
+### Changed（代码规范）
+
+- `CORE_FIELDS` 核心字段列表提取到 `models.py` 模块级常量，validator 复用，消除重复定义漂移风险
+- `preview_page`/`mapping_page`/`generate_page` 的重复逻辑改为调用服务层纯函数
+- CI 改用 `requirements-dev.txt` 并加入覆盖率检查（`--cov-fail-under=85`）
+
+### 兼容性
+
+- 核心 API 不变；**259 项自动化测试通过**（新增约 170 项：report_reader、ai_workflow、pdf_exporter、validator/模型补充、SSRF 安全、边界路径等），总覆盖率 91%。
+
 ## [2.4.0] - 2026-10-25
 
 ### Added（第四轮用户视角多 Agent 评审：提交体验 / 模板兼容 / 数据可视化）

@@ -3,13 +3,12 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from formora.core import data_reader, mapper, template_parser, validator
 from formora.core.models import FieldMapping, ReportTask
-from formora.services.config import Config
 from formora.services import report_service
+from formora.services.config import Config
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 TEMPLATE = SAMPLES / "实验报告模板.docx"
@@ -69,7 +68,7 @@ class TestVersionedOutput:
         results, errors = report_service.generate_batch(state, auto_chart=True)
         assert len(results) == len(data.rows)
         assert errors == []
-        batch_dir = Path(getattr(state, "last_batch_dir"))
+        batch_dir = Path(state.last_batch_dir)
         assert batch_dir.exists()
         # 目录含时间戳段
         assert batch_dir.parent.name == "批量版本化_批量"

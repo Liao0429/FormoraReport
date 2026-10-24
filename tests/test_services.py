@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from formora.core import data_reader, mapper, template_parser

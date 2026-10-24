@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import base64
-import ctypes
-import ctypes.wintypes
 import json
 import os
+import sys
 from pathlib import Path
+
+_IS_WINDOWS = sys.platform == "win32"
 
 from formora.core.errors import UserError
 
@@ -37,11 +38,16 @@ DEFAULTS = {
 }
 
 
-class _DataBlob(ctypes.Structure):
-    _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-
-
 def _dpapi_encrypt(plain: str) -> str:
+    """用 Windows DPAPI 加密（仅 Windows；其他平台抛 UserError）。"""
+    if not _IS_WINDOWS:
+        raise UserError("DPAPI 加密仅支持 Windows 平台。")
+    import ctypes
+    import ctypes.wintypes
+
+    class _DataBlob(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
     data = plain.encode("utf-8")
     in_blob = _DataBlob(len(data), ctypes.cast(data, ctypes.POINTER(ctypes.c_char)))
     out_blob = _DataBlob()
@@ -56,6 +62,15 @@ def _dpapi_encrypt(plain: str) -> str:
 
 
 def _dpapi_decrypt(enc_b64: str) -> str:
+    """用 Windows DPAPI 解密（仅 Windows；其他平台抛 UserError）。"""
+    if not _IS_WINDOWS:
+        raise UserError("DPAPI 解密仅支持 Windows 平台。")
+    import ctypes
+    import ctypes.wintypes
+
+    class _DataBlob(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
     encrypted = base64.b64decode(enc_b64)
     in_blob = _DataBlob(len(encrypted), ctypes.cast(encrypted, ctypes.POINTER(ctypes.c_char)))
     out_blob = _DataBlob()
