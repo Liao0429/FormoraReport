@@ -1,0 +1,11 @@
+$os = Get-CimInstance Win32_OperatingSystem
+$total = [math]::Round($os.TotalVisibleMemorySize/1MB,1)
+$free = [math]::Round($os.FreePhysicalMemory/1MB,1)
+$used = [math]::Round(($os.TotalVisibleMemorySize - $os.FreePhysicalMemory)/1MB,1)
+Write-Output ("TotalRAM_GB=" + $total)
+Write-Output ("FreeRAM_GB=" + $free)
+Write-Output ("UsedRAM_GB=" + $used)
+$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+Write-Output ("CPU=" + $cpu.Name)
+$gpu = Get-CimInstance Win32_VideoController | Select-Object -First 1
+Write-Output ("GPU=" + $gpu.Name)

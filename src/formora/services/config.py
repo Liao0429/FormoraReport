@@ -1,0 +1,118 @@
+"""配置管理 + 敏感信息加密存储。
+
+- 配置文件：%APPDATA%/FormoraReport/config.json（普通配置明文）。
+- API 密钥：用 Windows DPAPI 加密后以 base64 存入 config，不明文落盘。
+  纯 ctypes 调用 CryptProtectData / CryptUnprotectData，无需第三方库。
+"""
+from __future__ import annotations
+
+import base64
+import ctypes
+import ctypes.wintypes
+import json
+import os
+from pathlib import Path
+
+from formora.core.errors import UserError
+
+APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "FormoraReport"
+CONFIG_PATH = APP_DIR / "config.json"
+LOG_DIR = APP_DIR / "logs"
+HISTORY_PATH = APP_DIR / "history.jsonl"
+OUTPUT_DEFAULT_DIR = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "FormoraReport"
+
+DEFAULTS = {
+    "theme": "light",
+    "output_dir": str(OUTPUT_DEFAULT_DIR),
+    "ai": {
+        "enabled": False,
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "api_key_enc": "",
+        "temperature": 0.2,
+    },
+    "privacy": {
+        "upload_warning_shown": False,
+    },
+}
+
+
+class _DataBlob(ctypes.Structure):
+    _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+
+def _dpapi_encrypt(plain: str) -> str:
+    data = plain.encode("utf-8")
+    in_blob = _DataBlob(len(data), ctypes.cast(data, ctypes.POINTER(ctypes.c_char)))
+    out_blob = _DataBlob()
+    if not ctypes.windll.crypt32.CryptProtectData(
+            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        raise UserError("DPAPI 加密失败。")
+    try:
+        encrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        return base64.b64encode(encrypted).decode("ascii")
+    finally:
+        ctypes.windll.kernel32.LocalFree(out_blob.pbData)
+
+
+def _dpapi_decrypt(enc_b64: str) -> str:
+    encrypted = base64.b64decode(enc_b64)
+    in_blob = _DataBlob(len(encrypted), ctypes.cast(encrypted, ctypes.POINTER(ctypes.c_char)))
+    out_blob = _DataBlob()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        raise UserError("DPAPI 解密失败（可能配置被移动或系统账户变更）。")
+    try:
+        decrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        return decrypted.decode("utf-8")
+    finally:
+        ctypes.windll.kernel32.LocalFree(out_blob.pbData)
+
+
+class Config:
+    def __init__(self, path: Path = CONFIG_PATH):
+        self.path = path
+        self.data = self._load()
+
+    def _load(self) -> dict:
+        if self.path.exists():
+            try:
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+            except Exception:
+                raw = {}
+            merged = json.loads(json.dumps(DEFAULTS))
+            merged.update(raw)
+            if isinstance(merged.get("ai"), dict):
+                ai = dict(DEFAULTS["ai"])
+                ai.update(merged["ai"])
+                merged["ai"] = ai
+            return merged
+        return json.loads(json.dumps(DEFAULTS))
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def get(self, key: str, default=None):
+        return self.data.get(key, default)
+
+    def set(self, key: str, value):
+        self.data[key] = value
+
+    def set_ai_api_key(self, key: str):
+        self.data["ai"]["api_key_enc"] = _dpapi_encrypt(key) if key else ""
+        self.save()
+
+    def get_ai_api_key(self) -> str:
+        enc = (self.data.get("ai") or {}).get("api_key_enc", "")
+        if not enc:
+            return ""
+        try:
+            return _dpapi_decrypt(enc)
+        except UserError:
+            return ""
+
+
+def ensure_dirs():
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    LOG_DIR.mkdir(parents=True, exist_ok=True)

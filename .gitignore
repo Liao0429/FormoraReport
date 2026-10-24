@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# 输出/生成物
+dist/
+build/
+tests/output/
+*.spec
+
+# 日志与本地数据
+logs/
+*.log
+
+# 打包产物（安装器二进制不入库）
+packaging/*.exe
+
+# 开源调研原始抓取数据（含第三方正文，不随仓库分发）
+reports/github_candidates_raw.csv
+reports/github_raw/
+reports/readmes/
+
+# 测试/静态分析缓存
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# 用户数据/密钥
+*.key
+*.secret
+*.pem
+*.ppk
+.env
+.env.*
+
+# 编辑器
+.vscode/
+.idea/
+
+# 系统
+Thumbs.db
+.DS_Store

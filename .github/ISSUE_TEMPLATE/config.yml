@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/Liao0429/FormoraReport/security/advisories/new
+    about: 请通过 Security Advisories 私有报告安全漏洞，勿在公开 Issue 提交敏感信息。
