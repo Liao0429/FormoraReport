@@ -68,7 +68,7 @@ def resolve_context(state, row: dict | None = None) -> dict:
     if state.data and state.data.is_tabular:
         # 传入 row 时（生成当前行/批量），data_rows 只含当前行，与批量语义一致；
         # 未传 row 时（如仅校验/预览），注入全表供模板循环展示
-        ctx["data_rows"] = [row] if row is not None else state.data.rows
+        ctx["data_rows"] = [_format_rows([row])[0]] if row is not None else _format_rows(state.data.rows)
     return ctx
 
 
@@ -189,6 +189,15 @@ def _output_dir(state) -> Path:
     return out_dir
 
 
+def _format_rows(rows: list[dict]) -> list[dict]:
+    """把数据行格式化为适合渲染进报告的值（None→空、85.0→85、日期去时间戳）。
+
+    避免表格循环块中 None 被 jinja 渲染成字面量 "None"，并改善数字美观度。
+    """
+    from formora.core.mapper import _format_value
+    return [{k: _format_value(v) for k, v in row.items()} for row in rows]
+
+
 def _timestamp() -> str:
     """返回紧凑时间戳，用于输出文件版本化，避免重复生成覆盖旧报告。"""
     from datetime import datetime
@@ -268,7 +277,7 @@ def generate_batch(state, auto_chart: bool | None = None) -> tuple[list[str], li
             if m.source_type == "image":
                 ctx[m.template_field] = None
         # 批量时每份报告只含当前行数据，而非整表
-        ctx["data_rows"] = [row]
+        ctx["data_rows"] = _format_rows([row])
         out = batch_dir / f"{sanitize_filename(state.task.name)}_第{i + 1}行.docx"
         try:
             _drop_uncovered_image_fields(ctx, state.mappings, image_vars)

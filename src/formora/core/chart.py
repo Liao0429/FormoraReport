@@ -78,3 +78,44 @@ def generate_bar_chart(
     y_label: str = "",
 ) -> Path:
     return _render_chart("bar", x_values, y_values, output_png, title, x_label, y_label)
+
+
+def generate_multi_line_chart(
+    x_values: list,
+    series: dict[str, list],
+    output_png: str | Path,
+    title: str = "",
+    x_label: str = "",
+    y_label: str = "",
+) -> Path:
+    """绘制多系列折线图（每列一条线 + 图例）。series: {系列名: y值列表}。"""
+    _require_mpl()
+    if not x_values or not series:
+        raise DocumentFormatError("多系列图表数据为空。")
+    n = len(x_values)
+    for name, ys in series.items():
+        if len(ys) != n:
+            raise DocumentFormatError(f"图表数据列长度不一致：{name} ({len(ys)}) != x ({n})")
+    output = Path(output_png)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=150)
+    xs = list(map(str, x_values))
+    colors = ["#4a90d9", "#e67e22", "#27ae60", "#e74c3c", "#8e44ad", "#16a085"]
+    for i, (name, ys) in enumerate(series.items()):
+        ax.plot(xs, list(ys), marker="o", linewidth=2,
+                label=name, color=colors[i % len(colors)])
+    ax.grid(True, linestyle="--", alpha=0.5)
+    if title:
+        ax.set_title(title)
+    if x_label:
+        ax.set_xlabel(x_label)
+    if y_label:
+        ax.set_ylabel(y_label)
+    if len(series) > 1:
+        ax.legend()
+    fig.tight_layout()
+    try:
+        fig.savefig(str(output))
+    finally:
+        plt.close(fig)
+    return output

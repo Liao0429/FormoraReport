@@ -53,8 +53,12 @@ class GeneratePage(QWidget):
         preview_btn.clicked.connect(lambda: self.navigate("preview"))
         export_btn = secondary_button("导出 PDF")
         export_btn.clicked.connect(self._export_pdf)
+        self.batch_pdf_btn = secondary_button("批量导出 PDF")
+        self.batch_pdf_btn.clicked.connect(self._export_batch_pdf)
+        self.batch_pdf_btn.setToolTip("把当前批次目录下的所有 DOCX 转为 PDF")
         ops.addWidget(open_btn)
         ops.addWidget(export_btn)
+        ops.addWidget(self.batch_pdf_btn)
         ops.addStretch(1)
         ops.addWidget(preview_btn)
         lay.addLayout(ops)
@@ -65,6 +69,10 @@ class GeneratePage(QWidget):
             logs = self.state.task.logs if self.state.task else []
             self.log_text.setPlainText(
                 "\n".join(f"[{l.level}] {l.message}" for l in logs) or "（无日志）")
+        # 有批次目录才允许批量导出 PDF
+        if hasattr(self, "batch_pdf_btn"):
+            has_batch = bool(getattr(self.state, "last_batch_dir", None))
+            self.batch_pdf_btn.setEnabled(has_batch)
 
     def _open_folder(self):
         if not self.state.output_path:
@@ -86,3 +94,28 @@ class GeneratePage(QWidget):
             QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
         except FormoraError as e:
             QMessageBox.warning(self, "导出失败", str(e))
+
+    def _export_batch_pdf(self):
+        """把当前批次目录下的所有 DOCX 转为 PDF（串行，避免 LibreOffice 冲突）。"""
+        import glob
+        batch_dir = getattr(self.state, "last_batch_dir", None)
+        if not batch_dir or not os.path.isdir(batch_dir):
+            QMessageBox.warning(self, "提示", "没有可用的批次目录。")
+            return
+        from formora.core import pdf_exporter
+        docx_files = sorted(glob.glob(os.path.join(batch_dir, "*.docx")))
+        if not docx_files:
+            QMessageBox.warning(self, "提示", "批次目录里没有 DOCX 文件。")
+            return
+        ok, failed = 0, []
+        for docx in docx_files:
+            try:
+                out = docx[:-5] + ".pdf"
+                pdf_exporter.export_pdf(docx, out)
+                ok += 1
+            except FormoraError as e:
+                failed.append(f"{os.path.basename(docx)}: {e}")
+        msg = f"✅ 已导出 {ok} 份 PDF"
+        if failed:
+            msg += f"\n\n失败 {len(failed)} 份：\n" + "\n".join(failed[:5])
+        QMessageBox.information(self, "批量导出 PDF", msg)

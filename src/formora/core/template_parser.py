@@ -13,6 +13,18 @@ from .models import TableInfo, TemplateInfo
 # 占位符：{{ 字段名 }}。允许中英文、数字、空格、点、连字符、括号（如 {{学生 姓名}}、{{chart-1}}、{{实验名称(一)}}）。
 # 排除换行与花括号本身，保持 docxtpl/jinja 兼容。
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([^{}\n]+?)\s*\}\}")
+# 其它常见占位符写法：${字段名} / 【字段名】（Word 域/中文提示习惯）
+_DOLLAR_RE = re.compile(r"\$\{\s*([^{}\n]+?)\s*\}")
+_CN_BRACKET_RE = re.compile(r"【\s*([^】\n]+?)\s*】")
+
+
+def _find_placeholders(text: str) -> set[str]:
+    """检测文本中的占位符字段名，兼容 {{}} / ${} / 【】 三种写法。"""
+    found: set[str] = set()
+    found.update(_PLACEHOLDER_RE.findall(text))
+    found.update(_DOLLAR_RE.findall(text))
+    found.update(_CN_BRACKET_RE.findall(text))
+    return found
 _LOOP_RE = re.compile(r"\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}")
 # 循环体内字段引用：{{ row['项目'] }} / {{ row.项目 }} / {{ item["name"] }}
 _LOOP_FIELD_RE = re.compile(
@@ -102,7 +114,7 @@ def parse_template(path: str | Path) -> TemplateInfo:
         # 循环体内的 {{ row['字段'] }} 引用是 docxtpl 循环变量，不是顶层映射占位符，
         # 不应加入 placeholders（否则映射表出现 row['项目'] 这类怪字段）
         loop_body = _LOOP_BODY_RE.sub("", text)
-        placeholders.update(_PLACEHOLDER_RE.findall(loop_body))
+        placeholders.update(_find_placeholders(loop_body))
         for _var, _seq in _LOOP_RE.findall(text):
             loop_blocks.add(_var)
         if p._p.xml.count("<pic:pic") > 0 or "graphic" in p._p.xml:
@@ -122,7 +134,10 @@ def parse_template(path: str | Path) -> TemplateInfo:
                 header = cells
             sample.append(cells)
             for cell in row.cells:
-                placeholders.update(_PLACEHOLDER_RE.findall(cell.text or ""))
+                # 循环体剔除：与正文一致，避免表格内 {% for %} 循环体的 row['x'] 误入顶层
+                cell_text = cell.text or ""
+                cell_body = _LOOP_BODY_RE.sub("", cell_text)
+                placeholders.update(_find_placeholders(cell_body))
                 cell_paras = [cp.text for cp in cell.paragraphs if cp.text.strip()]
                 para_texts.extend(cell_paras)
         tables.append(TableInfo(
@@ -141,7 +156,7 @@ def parse_template(path: str | Path) -> TemplateInfo:
                 has_header_footer = True
                 para_texts.extend(texts)
                 for t in texts:
-                    placeholders.update(_PLACEHOLDER_RE.findall(t))
+                    placeholders.update(_find_placeholders(t))
 
     sections = _detect_sections(para_texts)
     return TemplateInfo(

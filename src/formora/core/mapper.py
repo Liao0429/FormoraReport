@@ -69,13 +69,44 @@ def auto_map(template: TemplateInfo, data: DataSource | None) -> list[FieldMappi
     return mappings
 
 
+def _format_value(v) -> str:
+    """把数据值格式化为适合进报告文本的字符串。
+
+    - 整数 float（85.0）→ "85"
+    - 科学计数法小值（1e-05）→ 普通小数
+    - pandas datetime / 日期 → YYYY-MM-DD
+    - 百分比字符串（"85%"）保持不变
+    - 其它 None / 普通值 → 原样字符串
+    """
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        if v.is_integer():
+            return str(int(v))
+        # 科学计数法小值（如 1e-05）：转普通小数
+        s = str(v)
+        if "e" in s or "E" in s:
+            # 用足够多的小数位，去掉尾随 0
+            return f"{v:.10f}".rstrip("0").rstrip(".")
+        return s
+    if isinstance(v, int):
+        return str(v)
+    # 处理 pandas Timestamp（datetime 子类）
+    import datetime as _dt
+    if isinstance(v, _dt.datetime):
+        return v.strftime("%Y-%m-%d")
+    if isinstance(v, _dt.date):
+        return v.strftime("%Y-%m-%d")
+    return str(v)
+
+
 def resolve_values(mappings: list[FieldMapping], row: dict | None = None) -> dict[str, object]:
     """根据映射与当前数据行解析出模板上下文。"""
     context: dict[str, object] = {}
     for m in mappings:
         if m.source_type == "column" and m.source_column is not None:
             v = (row or {}).get(m.source_column)
-            context[m.template_field] = "" if v is None else str(v)
+            context[m.template_field] = _format_value(v)
         elif m.source_type == "constant":
             context[m.template_field] = m.constant_value or ""
         elif m.source_type == "text":

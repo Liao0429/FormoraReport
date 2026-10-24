@@ -82,10 +82,12 @@ class TestDataRowsUnifiedV23:
         """单份生成传入 row 时，data_rows 只含当前行（与批量一致）。"""
         state = self._make_state(tmp_path)
         ctx = report_service.resolve_context(state, row=state.data.rows[0])
-        assert ctx["data_rows"] == [state.data.rows[0]]
+        expected = report_service._format_rows([state.data.rows[0]])
+        assert ctx["data_rows"] == expected
 
     def test_single_without_row_injects_all(self, tmp_path):
         """未传 row（仅校验/预览）时注入全表。"""
         state = self._make_state(tmp_path)
         ctx = report_service.resolve_context(state, row=None)
-        assert ctx["data_rows"] == state.data.rows
+        expected = report_service._format_rows(state.data.rows)
+        assert ctx["data_rows"] == expected
