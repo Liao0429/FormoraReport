@@ -93,6 +93,7 @@ class MappingPage(QWidget):
         opts = QHBoxLayout()
         opts.addWidget(QLabel("数据行:"))
         self.row_combo = QComboBox()
+        self.row_combo.currentIndexChanged.connect(lambda _: self._sync_row_combo())
         opts.addWidget(self.row_combo)
         self.chart_check = QCheckBox("自动生成实验数据图表并插入到「图表」占位符")
         self.chart_check.setChecked(True)
@@ -315,13 +316,16 @@ class MappingPage(QWidget):
     def _validate(self):
         try:
             self._collect_mappings()
-            mapping_issues = validator.validate_mappings(self.state.mappings)
+            mapping_issues = validator.validate_mappings(
+                self.state.mappings,
+                skip_image_placeholders=self._image_placeholders())
             context = report_service.resolve_context(self.state, self._current_row())
             ctx_issues = validator.validate_context(
                 context, self.state.template,
                 image_placeholders=self._image_placeholders())
             issues = mapping_issues + ctx_issues
-            lines = [f"[{iss.severity}] {iss.field}: {iss.message}" for iss in issues]
+            sev_cn = {"error": "⚠️ 必须处理", "warning": "⚠️ 建议补充", "info": "ℹ️ 提示"}
+            lines = [f"{sev_cn.get(iss.severity, iss.severity)} · {iss.field}: {iss.message}" for iss in issues]
             self.issues_text.setPlainText("\n".join(lines) if lines else "✅ 未发现明显问题。")
         except FormoraError as e:
             self.issues_text.setPlainText(f"校验出错：{e}")
@@ -420,6 +424,20 @@ class MappingPage(QWidget):
         if not materials.strip():
             QMessageBox.warning(self, "提示", "当前没有可用的实验素材文本。请先在「文档导入」页导入 TXT/MD/PDF 或表格数据。")
             return
+
+        # 覆盖确认：AI 会用常量覆盖用户已手动映射/填写的字段，需先提示
+        existing = [m.template_field for m in self.state.mappings
+                    if m.source_type != "image"
+                    and (m.source_type == "column"
+                         or (m.source_type == "constant" and m.constant_value))]
+        if existing:
+            ret = QMessageBox.question(
+                self, "覆盖确认",
+                f"AI 辅助会用生成的内容覆盖以下 {len(existing)} 个已填写的字段：\n"
+                + "、".join(existing[:10]) + ("…" if len(existing) > 10 else "")
+                + "\n\n是否继续？")
+            if ret != QMessageBox.StandardButton.Yes:
+                return
 
         self.issues_text.setPlainText("⏳ AI 正在根据素材提取字段内容，请稍候…（可在生成过程中继续浏览其他页面）")
         QMessageBox.information(

@@ -3,7 +3,13 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+if getattr(sys, "frozen", False):
+    # PyInstaller 打包版：formora 包已打进 _internal/formora
+    _bundle = Path(getattr(sys, "_MEIPASS", Path(sys.argv[0]).parent))
+    sys.path.insert(0, str(_bundle))
+else:
+    # 源码运行
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from formora.ui.app import run
 

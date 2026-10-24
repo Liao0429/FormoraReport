@@ -14,6 +14,12 @@ from .models import TableInfo, TemplateInfo
 # 排除换行与花括号本身，保持 docxtpl/jinja 兼容。
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*([^{}\n]+?)\s*\}\}")
 _LOOP_RE = re.compile(r"\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}")
+# 循环体内字段引用：{{ row['项目'] }} / {{ row.项目 }} / {{ item["name"] }}
+_LOOP_FIELD_RE = re.compile(
+    r"\{\{\s*\w+\s*\.?\s*\[?\s*['\"]?([\w\u4e00-\u9fa5]+)['\"]?\s*\]?\s*\}\}")
+# 循环块整体：{% for x in y %} ... {% endfor %}（用于从文本中剔除循环体内引用）
+_LOOP_BODY_RE = re.compile(
+    r"\{\%\s*for\s+\w+\s+in\s+\w+\s*\%\}.*?\{\%\s*endfor\s*\%\}", re.DOTALL)
 
 # 章节关键字 -> 规范化章节名
 _SECTION_KEYWORDS = [
@@ -27,6 +33,20 @@ _SECTION_KEYWORDS = [
     ("实验结论", ["实验结论", "结论", "总结", "心得体会"]),
     ("附录", ["附录"]),
 ]
+
+
+def _extract_all_text(element) -> list[str]:
+    """递归提取 OOXML 元素下所有 w:t 文本节点的非空文本。
+
+    用于扫描页眉/页脚/表格/嵌套表格中的文本（python-docx 的 paragraphs
+    不包含表格单元格，必须遍历底层 XML 才能覆盖完整）。
+    """
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    texts: list[str] = []
+    for t in element.iter():
+        if t.tag == ns + "t" and t.text and t.text.strip():
+            texts.append(t.text.strip())
+    return texts
 
 
 def _detect_sections(paragraph_texts: list[str]) -> dict[str, str]:
@@ -79,7 +99,10 @@ def parse_template(path: str | Path) -> TemplateInfo:
         text = p.text or ""
         if text.strip():
             para_texts.append(text)
-        placeholders.update(_PLACEHOLDER_RE.findall(text))
+        # 循环体内的 {{ row['字段'] }} 引用是 docxtpl 循环变量，不是顶层映射占位符，
+        # 不应加入 placeholders（否则映射表出现 row['项目'] 这类怪字段）
+        loop_body = _LOOP_BODY_RE.sub("", text)
+        placeholders.update(_PLACEHOLDER_RE.findall(loop_body))
         for _var, _seq in _LOOP_RE.findall(text):
             loop_blocks.add(_var)
         if p._p.xml.count("<pic:pic") > 0 or "graphic" in p._p.xml:
@@ -110,13 +133,15 @@ def parse_template(path: str | Path) -> TemplateInfo:
             sample=sample,
         ))
 
-    # 页眉页脚
+    # 页眉页脚：递归扫描所有 w:t 文本（含页眉页脚里的表格单元格、嵌套表格）
     for section in doc.sections:
-        for p in list(section.header.paragraphs) + list(section.footer.paragraphs):
-            if p.text and p.text.strip():
+        for hf in (section.header, section.footer):
+            texts = _extract_all_text(hf._element)
+            if texts:
                 has_header_footer = True
-                para_texts.append(p.text)
-                placeholders.update(_PLACEHOLDER_RE.findall(p.text))
+                para_texts.extend(texts)
+                for t in texts:
+                    placeholders.update(_PLACEHOLDER_RE.findall(t))
 
     sections = _detect_sections(para_texts)
     return TemplateInfo(

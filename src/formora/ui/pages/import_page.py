@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from formora.core import data_reader, template_parser
 from formora.core.errors import FormoraError
-from formora.ui.widgets import Card, file_row, primary_button, secondary_button
+from formora.ui.widgets import Card, file_row, hint_label, primary_button, secondary_button
 
 
 class ImportPage(QWidget):
@@ -41,6 +41,9 @@ class ImportPage(QWidget):
         tpl_btn = secondary_button("浏览…")
         tpl_btn.clicked.connect(self._pick_template)
         card.add_widget(file_row("实验模板", self.template_edit, tpl_btn))
+        tpl_hint = hint_label("提示：模板中请用 {{实验名称}}、{{姓名}} 这类标记待填位置，解析后会自动识别。")
+        tpl_hint.setWordWrap(True)
+        card.add_widget(tpl_hint)
 
         self.data_edit = QLineEdit()
         self.data_edit.setPlaceholderText("选择 CSV / XLSX / TXT / Markdown / PDF 实验数据")
@@ -101,26 +104,29 @@ class ImportPage(QWidget):
                 self.state.task.data_source = ds
 
             lines = []
-            lines.append(f"模板：{tpl}")
-            lines.append(f"占位符（{len(info.placeholders)}）：{', '.join(info.placeholders)}")
+            lines.append(f"✅ 模板解析成功：{Path(tpl).name}")
+            if info.placeholders:
+                lines.append(f"模板里检测到 {len(info.placeholders)} 个待填的空位（{{{{字段名}}}}）：")
+                lines.append("　" + "、".join(info.placeholders))
+            else:
+                lines.append("⚠️ 模板里没有检测到任何 {{字段名}} 标记。")
+                lines.append("请在 Word 中用 {{实验名称}} 这样的标记标出待填位置，再重新导入。")
             if info.loop_blocks:
-                lines.append(f"循环块：{', '.join(info.loop_blocks)}")
+                lines.append("检测到 1 个数据循环区（用于逐条列出实验数据）：")
+                lines.append("　该区域由数据自动填充，无需在右侧单独填写。")
             if info.sections:
-                lines.append("识别章节：" + "、".join(info.sections.keys()))
+                lines.append("识别到的章节：" + "、".join(info.sections.keys()))
             if info.tables:
-                lines.append(f"表格数：{len(info.tables)}")
-                for t in info.tables[:3]:
-                    lines.append(f"  表格{t.index}: {t.col_count}列×{t.row_count}行 表头={t.header}")
+                lines.append(f"模板含 {len(info.tables)} 个表格，会尽量保留原格式。")
             if info.has_images:
                 lines.append("模板包含图片元素（将尽量保留）")
             if info.has_header_footer:
-                lines.append("模板包含页眉/页脚")
+                lines.append("模板包含页眉/页脚（将保留）")
             if ds:
-                lines.append(f"\n数据：{data}（{ds.summary}）")
+                lines.append(f"\n数据文件：{Path(data).name}（{ds.summary}）")
                 if ds.columns:
-                    lines.append(f"数据列：{', '.join(ds.columns)}")
-                if ds.text:
-                    lines.append(f"\n文本前 200 字：\n{ds.text[:200]}")
+                    lines.append("数据列：" + "、".join(ds.columns))
+            lines.append("\n下一步：点击「下一步：字段映射 →」，把模板空位与数据列对应起来。")
             self.info_text.setPlainText("\n".join(lines))
         except FormoraError as e:
             QMessageBox.critical(self, "解析失败", str(e))

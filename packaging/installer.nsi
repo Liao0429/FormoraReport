@@ -4,18 +4,18 @@ Unicode true
 !include "MUI2.nsh"
 
 Name "FormoraReport"
-OutFile "FormoraReport-Setup-2.0.0.exe"
+OutFile "FormoraReport-Setup-2.3.0.exe"
 InstallDir "$PROGRAMFILES64\FormoraReport"
-InstallDirRegKey HKLM "Software\FormoraReport" "InstallDir"
+InstallDirRegKey HKLM "Software\\FormoraReport" "InstallDir"
 
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
 ; Version info
-VIProductVersion "2.0.0.0"
+VIProductVersion "2.3.0.0"
 VIAddVersionKey "ProductName" "FormoraReport"
 VIAddVersionKey "FileDescription" "FormoraReport Installer"
-VIAddVersionKey "ProductVersion" "2.0.0"
+VIAddVersionKey "ProductVersion" "2.3.0"
 VIAddVersionKey "LegalCopyright" "MIT License"
 
 !define MUI_ABORTWARNING

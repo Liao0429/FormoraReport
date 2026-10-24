@@ -27,7 +27,7 @@ jobs:
       - name: Build EXE with PyInstaller
         run: |
           pip install pyinstaller
-          pyinstaller --noconfirm --clean --name FormoraReport --windowed --collect-all matplotlib --collect-all docxtpl main.py
+          pyinstaller --noconfirm --clean FormoraReport.spec
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

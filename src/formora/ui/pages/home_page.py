@@ -22,7 +22,7 @@ class HomePage(QWidget):
         title = QLabel("FormoraReport")
         title.setObjectName("AppTitle")
         lay.addWidget(title)
-        sub = QLabel("Windows 实验报告自动填写工具 · 无 AI 模式为默认")
+        sub = QLabel("实验报告自动填写工具：导入模板 → 填写字段 → 一键生成")
         sub.setObjectName("HintText")
         lay.addWidget(sub)
 
@@ -33,8 +33,12 @@ class HomePage(QWidget):
         new_btn.clicked.connect(lambda: self.navigate("import"))
         template_btn = secondary_button("导入模板")
         template_btn.clicked.connect(lambda: self.navigate("import"))
+        demo_btn = secondary_button("🎓 使用示例模板体验")
+        demo_btn.setToolTip("自动生成一份示例实验报告模板和数据，载入后即可体验完整流程")
+        demo_btn.clicked.connect(self._load_demo)
         row.addWidget(new_btn)
         row.addWidget(template_btn)
+        row.addWidget(demo_btn)
         row.addStretch(1)
         actions.add_layout(row)
         lay.addWidget(actions)
@@ -58,3 +62,51 @@ class HomePage(QWidget):
             status = e.get("status", "")
             out = e.get("output_path") or ""
             self.list_widget.addItem(f"{name}  [{status}]  {out}")
+
+    def _load_demo(self):
+        """载入示例模板+数据并跳转映射页，让新手一键体验完整流程。
+
+        支持两种环境：
+        - 打包版（frozen）：从 PyInstaller 资源目录（sys._MEIPASS/samples）读取示例文件；
+        - 源码运行：从 tests/samples 读取，缺失时现场生成。
+        """
+        from pathlib import Path
+        from PySide6.QtWidgets import QMessageBox
+
+        try:
+            import sys
+            from formora.core import data_reader, template_parser
+
+            tpl: Path
+            data: Path
+            if getattr(sys, "frozen", False):
+                # 打包版：资源在 sys._MEIPASS（onedir 是 _internal）
+                base = Path(getattr(sys, "_MEIPASS", Path(sys.argv[0]).parent))
+                samples_dir = base / "samples"
+                tpl = samples_dir / "实验报告模板.docx"
+                data = samples_dir / "实验数据.csv"
+            else:
+                # 源码运行：优先用 tests/samples，缺失则现场生成
+                root = Path(__file__).resolve().parent.parent.parent.parent.parent
+                samples_dir = root / "tests" / "samples"
+                samples_dir.mkdir(parents=True, exist_ok=True)
+                tpl = samples_dir / "实验报告模板.docx"
+                data = samples_dir / "实验数据.csv"
+                if not tpl.exists() or not data.exists():
+                    sys.path.insert(0, str(root / "scripts"))
+                    from make_samples import make_csv, make_template
+                    if not tpl.exists():
+                        make_template(tpl)
+                    if not data.exists():
+                        make_csv(data)
+
+            info = template_parser.parse_template(tpl)
+            ds = data_reader.read_data(data)
+            self.state.new_task(name="示例实验报告")
+            self.state.task.template_path = tpl
+            self.state.template = info
+            self.state.data = ds
+            self.state.task.data_source = ds
+            self.navigate("mapping")
+        except Exception as e:
+            QMessageBox.warning(self, "加载示例失败", f"无法加载示例模板：{e}")

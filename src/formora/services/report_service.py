@@ -66,7 +66,9 @@ def resolve_context(state, row: dict | None = None) -> dict:
         if m.source_type == "image":
             ctx[m.template_field] = None
     if state.data and state.data.is_tabular:
-        ctx["data_rows"] = state.data.rows
+        # 传入 row 时（生成当前行/批量），data_rows 只含当前行，与批量语义一致；
+        # 未传 row 时（如仅校验/预览），注入全表供模板循环展示
+        ctx["data_rows"] = [row] if row is not None else state.data.rows
     return ctx
 
 
@@ -80,17 +82,50 @@ def auto_chart(state) -> str | None:
     data = state.data
     if not data or not data.rows or not data.columns:
         return None
+    # 数值列检测：允许文本数字（"12.5"）与百分比（"85%"）——先尝试数值转换
     numeric_cols = []
     for col in data.columns:
         vals = [r.get(col) for r in data.rows]
-        if vals and all(isinstance(v, (int, float)) for v in vals):
+        if not vals:
+            continue
+        parsed = True
+        for v in vals:
+            if v is None:
+                continue
+            s = str(v).strip().replace("%", "")
+            try:
+                float(s)
+            except (ValueError, TypeError):
+                parsed = False
+                break
+        if parsed and any(v is not None for v in vals):
             numeric_cols.append(col)
     if not numeric_cols:
         return None
-    y_col = numeric_cols[0]
-    x_col = next((c for c in data.columns if c != y_col), None)
-    xs = [str(r.get(x_col, i + 1)) for i, r in enumerate(data.rows)]
-    ys = [float(r.get(y_col)) for r in data.rows]
+
+    # 轴启发式：含时间/日期/序号语义的列优先作 x 轴；否则首个非数值列作 x
+    _X_HINTS = ("时间", "日期", "时刻", "序号", "编号", "time", "date", "s", "min", "h")
+    x_col = None
+    for col in data.columns:
+        low = col.lower()
+        if any(h in low for h in _X_HINTS):
+            x_col = col
+            break
+    if x_col is None:
+        x_col = next((c for c in data.columns if c != numeric_cols[0]), None)
+    y_col = next((c for c in numeric_cols if c != x_col), None) or numeric_cols[0]
+
+    xs = []
+    ys = []
+    for i, r in enumerate(data.rows):
+        xv = r.get(x_col, i + 1)
+        xs.append(str(xv) if xv is not None else str(i + 1))
+        yv = r.get(y_col)
+        if yv is not None:
+            s = str(yv).strip().replace("%", "")
+            ys.append(float(s))
+    if not ys:
+        return None
     out_dir = _output_dir(state)
     img = out_dir / f"{sanitize_filename(state.task.name)}_图表.png"
     try:

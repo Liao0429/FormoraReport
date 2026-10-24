@@ -3,10 +3,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, QVBoxLayout, QWidget
 
 from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, primary_button, secondary_button
+
+
+class _ReviewThread(QThread):
+    """后台执行 AI 审查，避免阻塞 UI 主线程。"""
+
+    result_ready = Signal(object)
+    error_raised = Signal(str)
+
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs
+
+    def run(self):
+        try:
+            self.result_ready.emit(self._fn(*self._args, **self._kwargs))
+        except Exception as e:
+            self.error_raised.emit(str(e))
 
 
 class PreviewPage(QWidget):
@@ -14,6 +34,7 @@ class PreviewPage(QWidget):
         super().__init__()
         self.state = state
         self.navigate = navigate
+        self._review_thread: _ReviewThread | None = None
         self._build()
 
     def _build(self):
@@ -90,18 +111,36 @@ class PreviewPage(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "读取报告失败", str(e))
             return
-        try:
-            issues = client.review_report(cfg, report_text)
-        except FormoraError as e:
-            QMessageBox.critical(self, "AI 审查失败", str(e))
-            return
+        # 后台线程化：AI 请求可能耗时，不阻塞 UI
+        self._set_review_busy(True)
+        self.text_edit.append("\n\n⏳ AI 审查中，请稍候…")
+        self._review_thread = _ReviewThread(client.review_report, cfg, report_text)
+        self._review_thread.result_ready.connect(self._on_review_done)
+        self._review_thread.error_raised.connect(self._on_review_error)
+        self._review_thread.start()
+
+    def _set_review_busy(self, busy: bool):
+        if hasattr(self, "ai_review_btn"):
+            self.ai_review_btn.setEnabled(not busy)
+
+    def _on_review_done(self, issues):
+        self._set_review_busy(False)
+        self.refresh()  # 恢复原始报告预览
         if not issues:
-            QMessageBox.information(self, "AI 审查", "未发现问题。")
+            self.text_edit.append("\n【AI 审查】未发现问题。（AI 判断仅供参考，请人工复核）")
             return
-        lines = ["AI 审查发现以下问题："]
+        lines = ["\n【AI 审查】发现以下问题："]
         for iss in issues:
-            lines.append(f"[{iss.get('severity', 'info')}] {iss.get('field', '')}: {iss.get('issue', '')}")
-        self.text_edit.setPlainText("\n".join(lines))
+            sev = iss.get("severity", "info")
+            icon = "🔴" if sev == "error" else ("⚠️" if sev == "warning" else "ℹ️")
+            lines.append(f"{icon} {iss.get('field', '')}: {iss.get('issue', '')}")
+        self.text_edit.append("\n".join(lines))
+        self.text_edit.append("\n（AI 判断仅供参考，请人工复核）")
+
+    def _on_review_error(self, msg):
+        self._set_review_busy(False)
+        self.refresh()
+        self.text_edit.append(f"\n【AI 审查失败】{msg}")
 
     def refresh(self):
         if not self.state.output_path or not Path(self.state.output_path).exists():
@@ -118,6 +157,9 @@ class PreviewPage(QWidget):
                 parts.append(f"[表格 {i+1}]")
                 for row in table.rows:
                     parts.append(" | ".join(c.text for c in row.cells))
+            # 提示图片数量（文本预览无法展示图片，引导用户用 Word 查看排版）
+            if doc.inline_shapes:
+                parts.append(f"\n📷 报告包含 {len(doc.inline_shapes)} 张图片（文本预览不显示图片，请用 Word 打开查看排版效果）。")
             parts.append(self._ai_sources_text())
             self.text_edit.setPlainText("\n".join(parts))
         except Exception as e:

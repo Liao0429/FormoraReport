@@ -9,7 +9,7 @@ __pycache__/
 dist/
 build/
 tests/output/
-*.spec
+!FormoraReport.spec
 
 # 日志与本地数据
 logs/

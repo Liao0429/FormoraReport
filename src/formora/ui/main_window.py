@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
 
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        self.statusBar.showMessage("就绪 · 无 AI 模式（默认）")
+        self._refresh_statusbar()
 
         self.navigate("home")
 
@@ -222,12 +222,25 @@ class MainWindow(QMainWindow):
 
     def _on_theme_change(self, name: str):
         apply_theme(self.window(), name)
+        self._refresh_statusbar()
         if self._mica_ok:
             from formora.ui.window_effects import apply_immersive_dark_mode
             try:
                 apply_immersive_dark_mode(int(self.winId()), dark=(name == "dark"))
             except Exception:
                 pass
+
+    def _refresh_statusbar(self):
+        """根据 AI 配置刷新状态栏文案。"""
+        try:
+            ai_enabled = bool(self.state.config.get("ai", {}).get("enabled"))
+            if ai_enabled:
+                model = (self.state.config.get("ai", {}).get("model") or "").strip()
+                self.statusBar.showMessage("就绪 · AI 模式已启用" + (f" · {model}" if model else ""))
+            else:
+                self.statusBar.showMessage("就绪 · 无 AI 模式（默认）")
+        except Exception:
+            self.statusBar.showMessage("就绪")
 
 
 def _win_button(text: str, object_name: str) -> QPushButton:
