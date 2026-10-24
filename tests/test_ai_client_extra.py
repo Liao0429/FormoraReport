@@ -1,4 +1,5 @@
 """AI 客户端补充测试：base_url 校验（SSRF 防护）、异常结构。"""
+
 from __future__ import annotations
 
 import pytest
@@ -22,8 +23,14 @@ class TestValidateBaseUrl:
             ai_client._validate_base_url("http://example.com/v1")
 
     def test_loopback_http_allowed(self):
-        assert ai_client._validate_base_url("http://localhost:8080/v1") == "http://localhost:8080/v1"
-        assert ai_client._validate_base_url("http://127.0.0.1:11434/v1") == "http://127.0.0.1:11434/v1"
+        assert (
+            ai_client._validate_base_url("http://localhost:8080/v1")
+            == "http://localhost:8080/v1"
+        )
+        assert (
+            ai_client._validate_base_url("http://127.0.0.1:11434/v1")
+            == "http://127.0.0.1:11434/v1"
+        )
 
     def test_private_ranges_blocked(self):
         for url in (
@@ -41,7 +48,10 @@ class TestValidateBaseUrl:
             ai_client._validate_base_url("https://1.2.3.4/v1")
 
     def test_valid_https_normalized(self):
-        assert ai_client._validate_base_url("https://api.example.com/v1/") == "https://api.example.com/v1"
+        assert (
+            ai_client._validate_base_url("https://api.example.com/v1/")
+            == "https://api.example.com/v1"
+        )
 
     def test_malformed(self):
         with pytest.raises(ExternalDependencyError):
@@ -51,12 +61,16 @@ class TestValidateBaseUrl:
 class TestIsConfiguredExtra:
     def test_enabled_but_no_key(self, tmp_path):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         assert not ai_client.is_configured(cfg)
 
     def test_key_but_not_enabled(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": False, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": False, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         assert not ai_client.is_configured(cfg)
 
@@ -64,7 +78,9 @@ class TestIsConfiguredExtra:
 class TestExtractFieldsExtra:
     def test_non_dict_result_raises(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         monkeypatch.setattr(ai_client, "_chat_json", lambda *a, **k: ["not-a-dict"])
         with pytest.raises(ExternalDependencyError):
@@ -72,10 +88,15 @@ class TestExtractFieldsExtra:
 
     def test_returns_fields_list(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
-        monkeypatch.setattr(ai_client, "_chat_json",
-                            lambda *a, **k: {"fields": [{"field": "实验名称", "value": "x"}]})
+        monkeypatch.setattr(
+            ai_client,
+            "_chat_json",
+            lambda *a, **k: {"fields": [{"field": "实验名称", "value": "x"}]},
+        )
         fields = ai_client.extract_fields(cfg, "素材", ["实验名称"])
         assert fields[0]["field"] == "实验名称"
 
@@ -83,7 +104,9 @@ class TestExtractFieldsExtra:
 class TestReviewReportExtra:
     def test_non_dict_result_raises(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         monkeypatch.setattr(ai_client, "_chat_json", lambda *a, **k: 42)
         with pytest.raises(ExternalDependencyError):
@@ -91,10 +114,15 @@ class TestReviewReportExtra:
 
     def test_returns_issues_list(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
-        monkeypatch.setattr(ai_client, "_chat_json",
-                            lambda *a, **k: {"issues": [{"field": "结论", "issue": "为空"}]})
+        monkeypatch.setattr(
+            ai_client,
+            "_chat_json",
+            lambda *a, **k: {"issues": [{"field": "结论", "issue": "为空"}]},
+        )
         issues = ai_client.review_report(cfg, "报告文本")
         assert issues[0]["field"] == "结论"
 

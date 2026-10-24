@@ -1,4 +1,5 @@
 """数据读取补充测试：编码回退、格式拒绝、全空行、列名清洗。"""
+
 from __future__ import annotations
 
 import pytest
@@ -60,6 +61,7 @@ class TestFormatRejection:
 class TestTabularCleaning:
     def test_all_empty_rows_dropped(self, tmp_path):
         import pandas as pd
+
         p = tmp_path / "empty.xlsx"
         df = pd.DataFrame({"A": [1, None, 2], "B": ["x", None, "y"]})
         df.to_excel(p, index=False)

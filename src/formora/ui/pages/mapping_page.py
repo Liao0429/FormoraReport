@@ -5,11 +5,12 @@
 线程化：AI 请求（网络，60s 超时）与批量生成（可能大量行）都放到后台 QThread，
 避免阻塞 UI 主线程；完成后通过信号回到主线程更新界面。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -74,19 +75,29 @@ class MappingPage(QWidget):
 
         hint = hint_label(
             "自动将模板占位符与数据列匹配。文本字段填内容；字段名含「截图/图/图表」的"
-            "可绑定本地图片，生成时会插入到原模板对应位置。")
+            "可绑定本地图片，生成时会插入到原模板对应位置。"
+        )
         lay.addWidget(hint)
 
         card = Card("字段映射")
-        card.add_widget(hint_label(
-            "切换页面不会丢失已编辑的映射。需要重新按数据列自动匹配时，"
-            "点击「重新自动匹配」。"))
+        card.add_widget(
+            hint_label(
+                "切换页面不会丢失已编辑的映射。需要重新按数据列自动匹配时，"
+                "点击「重新自动匹配」。"
+            )
+        )
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["模板字段", "来源类型", "来源/数据列", "值（文本/图片路径）"])
+        self.table.setHorizontalHeaderLabels(
+            ["模板字段", "来源类型", "来源/数据列", "值（文本/图片路径）"]
+        )
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeToContents
+        )
         self.table.verticalHeader().setVisible(False)
         card.add_widget(self.table)
 
@@ -139,7 +150,9 @@ class MappingPage(QWidget):
         state = self.state
         if not state.template:
             self.table.setRowCount(0)
-            self.issues_text.setPlainText("⚠️ 请先在「文档导入」页选择并解析实验报告模板。")
+            self.issues_text.setPlainText(
+                "⚠️ 请先在「文档导入」页选择并解析实验报告模板。"
+            )
             return
         if not state.mappings:
             state.mappings = mapper.auto_map(state.template, state.data)
@@ -147,7 +160,9 @@ class MappingPage(QWidget):
         self.row_combo.clear()
         if state.data and state.data.is_tabular:
             for i, r in enumerate(state.data.rows):
-                label = f"第 {i + 1} 行：" + " ".join(f"{k}={v}" for k, v in list(r.items())[:3])
+                label = f"第 {i + 1} 行：" + " ".join(
+                    f"{k}={v}" for k, v in list(r.items())[:3]
+                )
                 self.row_combo.addItem(label)
             self.row_combo.setCurrentIndex(0)
         else:
@@ -167,12 +182,17 @@ class MappingPage(QWidget):
             self.table.setItem(row, 0, field_item)
 
             # 默认类型：图片字段 -> 图片；有列匹配 -> 数据列；否则常量
-            default_type = "图片" if is_image_field(m.template_field) else (
-                "数据列" if m.source_type == "column" else "常量")
+            default_type = (
+                "图片"
+                if is_image_field(m.template_field)
+                else ("数据列" if m.source_type == "column" else "常量")
+            )
             type_combo = QComboBox()
             type_combo.addItems(["数据列", "常量", "图片"])
             type_combo.setCurrentText(default_type)
-            type_combo.currentIndexChanged.connect(lambda _, r=row: self._type_changed(r))
+            type_combo.currentIndexChanged.connect(
+                lambda _, r=row: self._type_changed(r)
+            )
             self.table.setCellWidget(row, 1, type_combo)
 
             col_combo = QComboBox()
@@ -289,8 +309,11 @@ class MappingPage(QWidget):
 
     def _pick_image(self, row: int):
         path, _ = QFileDialog.getOpenFileName(
-            self, "选择图片", str(Path.home()),
-            "图片 (*.png *.jpg *.jpeg *.gif *.bmp);;所有文件 (*.*)")
+            self,
+            "选择图片",
+            str(Path.home()),
+            "图片 (*.png *.jpg *.jpeg *.gif *.bmp);;所有文件 (*.*)",
+        )
         if path:
             m = self.state.mappings[row]
             m.source_type = "image"
@@ -308,25 +331,36 @@ class MappingPage(QWidget):
 
     def _image_vars(self) -> dict[str, str]:
         """收集图片字段 -> 图片路径（含自动图表）。"""
-        return report_service.collect_image_vars(self.state, self.chart_check.isChecked())
+        return report_service.collect_image_vars(
+            self.state, self.chart_check.isChecked()
+        )
 
     def _image_placeholders(self) -> set[str]:
-        return report_service.image_placeholders(self.state, self.chart_check.isChecked())
+        return report_service.image_placeholders(
+            self.state, self.chart_check.isChecked()
+        )
 
     def _validate(self):
         try:
             self._collect_mappings()
             mapping_issues = validator.validate_mappings(
-                self.state.mappings,
-                skip_image_placeholders=self._image_placeholders())
+                self.state.mappings, skip_image_placeholders=self._image_placeholders()
+            )
             context = report_service.resolve_context(self.state, self._current_row())
             ctx_issues = validator.validate_context(
-                context, self.state.template,
-                image_placeholders=self._image_placeholders())
+                context,
+                self.state.template,
+                image_placeholders=self._image_placeholders(),
+            )
             issues = mapping_issues + ctx_issues
             sev_cn = {"error": "⚠️ 必须处理", "warning": "⚠️ 建议补充", "info": "ℹ️ 提示"}
-            lines = [f"{sev_cn.get(iss.severity, iss.severity)} · {iss.field}: {iss.message}" for iss in issues]
-            self.issues_text.setPlainText("\n".join(lines) if lines else "✅ 未发现明显问题。")
+            lines = [
+                f"{sev_cn.get(iss.severity, iss.severity)} · {iss.field}: {iss.message}"
+                for iss in issues
+            ]
+            self.issues_text.setPlainText(
+                "\n".join(lines) if lines else "✅ 未发现明显问题。"
+            )
         except FormoraError as e:
             self.issues_text.setPlainText(f"校验出错：{e}")
 
@@ -338,8 +372,8 @@ class MappingPage(QWidget):
         self._collect_mappings()
         try:
             out_path = report_service.generate_single(
-                state, row=self._current_row(),
-                auto_chart=self.chart_check.isChecked())
+                state, row=self._current_row(), auto_chart=self.chart_check.isChecked()
+            )
             self.issues_text.setPlainText(f"✅ 报告已生成：\n{out_path}")
             self.navigate("generate")
         except FormoraError as e:
@@ -347,9 +381,13 @@ class MappingPage(QWidget):
 
     def _set_busy(self, busy: bool):
         """批量/AI 任务执行期间禁用操作按钮，避免重复触发。"""
-        for b in (getattr(self, "gen_btn", None), getattr(self, "batch_btn", None),
-                  getattr(self, "ai_btn", None), getattr(self, "validate_btn", None),
-                  getattr(self, "remap_btn", None)):
+        for b in (
+            getattr(self, "gen_btn", None),
+            getattr(self, "batch_btn", None),
+            getattr(self, "ai_btn", None),
+            getattr(self, "validate_btn", None),
+            getattr(self, "remap_btn", None),
+        ):
             if b is not None:
                 b.setEnabled(not busy)
 
@@ -362,11 +400,15 @@ class MappingPage(QWidget):
             QMessageBox.warning(self, "提示", "当前没有表格型数据，无法批量生成。")
             return
         self._collect_mappings()
-        self.issues_text.setPlainText("⏳ 正在批量生成，请稍候…（可在生成过程中继续浏览其他页面）")
+        self.issues_text.setPlainText(
+            "⏳ 正在批量生成，请稍候…（可在生成过程中继续浏览其他页面）"
+        )
         self._set_busy(True)
         self._batch_thread = _TaskThread(
             report_service.generate_batch,
-            state, auto_chart=self.chart_check.isChecked())
+            state,
+            auto_chart=self.chart_check.isChecked(),
+        )
         self._batch_thread.result_ready.connect(self._on_batch_done)
         self._batch_thread.error_raised.connect(self._on_batch_error)
         self._batch_thread.start()
@@ -376,9 +418,12 @@ class MappingPage(QWidget):
         results, errors = payload
         state = self.state
         output_dir = getattr(state, "last_batch_dir", None) or (
-            Path(state.config.get("output_dir")) / f"{state.task.name}_批量")
-        summary = [f"✅ 批量生成完成：成功 {len(results)} 份，失败 {len(errors)} 份。",
-                   f"输出目录：{output_dir}"]
+            Path(state.config.get("output_dir")) / f"{state.task.name}_批量"
+        )
+        summary = [
+            f"✅ 批量生成完成：成功 {len(results)} 份，失败 {len(errors)} 份。",
+            f"输出目录：{output_dir}",
+        ]
         summary.extend(f"  - {p}" for p in results[:20])
         if errors:
             summary.append("\n失败：")
@@ -401,17 +446,21 @@ class MappingPage(QWidget):
         cfg = self.state.config
         if not client.is_configured(cfg):
             QMessageBox.information(
-                self, "AI 模式未启用",
+                self,
+                "AI 模式未启用",
                 "AI 辅助需要你主动启用并在「设置 → AI 智能模式」中配置 API 地址、模型与密钥。\n"
-                "未配置时，无 AI 模式仍可正常完成全部基础功能。")
+                "未配置时，无 AI 模式仍可正常完成全部基础功能。",
+            )
             return
 
         # 隐私确认
         if not cfg.get("privacy", {}).get("upload_warning_shown"):
             ret = QMessageBox.question(
-                self, "隐私提示",
+                self,
+                "隐私提示",
                 "AI 辅助会把当前模板字段名与实验素材文本发送到你配置的模型 API。\n"
-                "请确认你信任该 API 服务商。是否继续？")
+                "请确认你信任该 API 服务商。是否继续？",
+            )
             if ret != QMessageBox.StandardButton.Yes:
                 return
             cfg.set("privacy", {**cfg.get("privacy", {}), "upload_warning_shown": True})
@@ -419,30 +468,47 @@ class MappingPage(QWidget):
 
         self._collect_mappings()
         from formora.services.ai_workflow import build_ai_fields
+
         fields = build_ai_fields(self.state.mappings)
         materials = self._materials_text()
         if not materials.strip():
-            QMessageBox.warning(self, "提示", "当前没有可用的实验素材文本。请先在「文档导入」页导入 TXT/MD/PDF 或表格数据。")
+            QMessageBox.warning(
+                self,
+                "提示",
+                "当前没有可用的实验素材文本。请先在「文档导入」页导入 TXT/MD/PDF 或表格数据。",
+            )
             return
 
         # 覆盖确认：AI 会用常量覆盖用户已手动映射/填写的字段，需先提示
-        existing = [m.template_field for m in self.state.mappings
-                    if m.source_type != "image"
-                    and (m.source_type == "column"
-                         or (m.source_type == "constant" and m.constant_value))]
+        existing = [
+            m.template_field
+            for m in self.state.mappings
+            if m.source_type != "image"
+            and (
+                m.source_type == "column"
+                or (m.source_type == "constant" and m.constant_value)
+            )
+        ]
         if existing:
             ret = QMessageBox.question(
-                self, "覆盖确认",
+                self,
+                "覆盖确认",
                 f"AI 辅助会用生成的内容覆盖以下 {len(existing)} 个已填写的字段：\n"
-                + "、".join(existing[:10]) + ("…" if len(existing) > 10 else "")
-                + "\n\n是否继续？")
+                + "、".join(existing[:10])
+                + ("…" if len(existing) > 10 else "")
+                + "\n\n是否继续？",
+            )
             if ret != QMessageBox.StandardButton.Yes:
                 return
 
-        self.issues_text.setPlainText("⏳ AI 正在根据素材提取字段内容，请稍候…（可在生成过程中继续浏览其他页面）")
+        self.issues_text.setPlainText(
+            "⏳ AI 正在根据素材提取字段内容，请稍候…（可在生成过程中继续浏览其他页面）"
+        )
         QMessageBox.information(
-            self, "提示",
-            "AI 只会依据素材生成内容；无依据的字段会标记为「待补充」，生成后请逐项检查再导出。")
+            self,
+            "提示",
+            "AI 只会依据素材生成内容；无依据的字段会标记为「待补充」，生成后请逐项检查再导出。",
+        )
         self._set_busy(True)
         self._ai_thread = _TaskThread(client.extract_fields, cfg, materials, fields)
         self._ai_thread.result_ready.connect(self._on_ai_done)
@@ -452,6 +518,7 @@ class MappingPage(QWidget):
     def _on_ai_done(self, result):
         self._set_busy(False)
         from formora.services.ai_workflow import apply_ai_results
+
         applied, confirmed = apply_ai_results(self.state.mappings, result)
         self.state.task.log("info", "system", f"AI 辅助填充 {applied} 个字段")
         self._fill_table()

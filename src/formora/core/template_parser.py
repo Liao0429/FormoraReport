@@ -2,6 +2,7 @@
 
 仅支持 .docx（OOXML）。旧版 .doc 不支持，给出明确错误。
 """
+
 from __future__ import annotations
 
 import re
@@ -25,13 +26,17 @@ def _find_placeholders(text: str) -> set[str]:
     found.update(_DOLLAR_RE.findall(text))
     found.update(_CN_BRACKET_RE.findall(text))
     return found
+
+
 _LOOP_RE = re.compile(r"\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}")
 # 循环体内字段引用：{{ row['项目'] }} / {{ row.项目 }} / {{ item["name"] }}
 _LOOP_FIELD_RE = re.compile(
-    r"\{\{\s*\w+\s*\.?\s*\[?\s*['\"]?([\w\u4e00-\u9fa5]+)['\"]?\s*\]?\s*\}\}")
+    r"\{\{\s*\w+\s*\.?\s*\[?\s*['\"]?([\w\u4e00-\u9fa5]+)['\"]?\s*\]?\s*\}\}"
+)
 # 循环块整体：{% for x in y %} ... {% endfor %}（用于从文本中剔除循环体内引用）
 _LOOP_BODY_RE = re.compile(
-    r"\{\%\s*for\s+\w+\s+in\s+\w+\s*\%\}.*?\{\%\s*endfor\s*\%\}", re.DOTALL)
+    r"\{\%\s*for\s+\w+\s+in\s+\w+\s*\%\}.*?\{\%\s*endfor\s*\%\}", re.DOTALL
+)
 
 # 章节关键字 -> 规范化章节名
 _SECTION_KEYWORDS = [
@@ -97,7 +102,9 @@ def parse_template(path: str | Path) -> TemplateInfo:
     try:
         doc = Document(str(path))
     except Exception as e:
-        raise DocumentFormatError(f"无法打开 DOCX 模板（文件可能损坏或不是有效 Word 文档）: {e}")
+        raise DocumentFormatError(
+            f"无法打开 DOCX 模板（文件可能损坏或不是有效 Word 文档）: {e}"
+        )
 
     placeholders: set[str] = set()
     loop_blocks: set[str] = set()
@@ -140,13 +147,15 @@ def parse_template(path: str | Path) -> TemplateInfo:
                 placeholders.update(_find_placeholders(cell_body))
                 cell_paras = [cp.text for cp in cell.paragraphs if cp.text.strip()]
                 para_texts.extend(cell_paras)
-        tables.append(TableInfo(
-            index=ti,
-            header=header,
-            row_count=len(table.rows),
-            col_count=len(table.columns),
-            sample=sample,
-        ))
+        tables.append(
+            TableInfo(
+                index=ti,
+                header=header,
+                row_count=len(table.rows),
+                col_count=len(table.columns),
+                sample=sample,
+            )
+        )
 
     # 页眉页脚：递归扫描所有 w:t 文本（含页眉页脚里的表格单元格、嵌套表格）
     for section in doc.sections:

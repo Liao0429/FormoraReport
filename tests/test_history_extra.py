@@ -1,4 +1,5 @@
 """历史记录补充测试：数据源字符串化、时间格式、对象落盘。"""
+
 from __future__ import annotations
 
 import re

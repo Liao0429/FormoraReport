@@ -1,4 +1,5 @@
 """模板解析器补充单元测试：占位符正则、章节识别、循环块、XML 文本抽取。"""
+
 from __future__ import annotations
 
 from formora.core.template_parser import (
@@ -85,6 +86,7 @@ class TestDetectSections:
 class TestExtractAllText:
     def test_extracts_paragraph_text(self):
         from docx import Document
+
         doc = Document()
         doc.add_paragraph("第一段")
         doc.add_paragraph("第二段")
@@ -94,6 +96,7 @@ class TestExtractAllText:
 
     def test_extracts_table_cell_text(self):
         from docx import Document
+
         doc = Document()
         table = doc.add_table(rows=1, cols=1)
         table.cell(0, 0).text = "单元格内容"
@@ -102,6 +105,7 @@ class TestExtractAllText:
 
     def test_ignores_empty_text_nodes(self):
         from docx import Document
+
         doc = Document()
         doc.add_paragraph("   ")
         assert _extract_all_text(doc.element) == []

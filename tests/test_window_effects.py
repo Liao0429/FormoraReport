@@ -1,4 +1,5 @@
 """窗口系统效果测试：DWM 不可用/非 Windows 时安全降级。"""
+
 from __future__ import annotations
 
 from formora.ui import window_effects as we

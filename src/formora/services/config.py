@@ -4,9 +4,11 @@
 - API 密钥：用 Windows DPAPI 加密后以 base64 存入 config，不明文落盘。
   纯 ctypes 调用 CryptProtectData / CryptUnprotectData，无需第三方库。
 """
+
 from __future__ import annotations
 
 import base64
+import copy
 import json
 import os
 import sys
@@ -18,10 +20,15 @@ from formora.core.errors import UserError
 
 if _IS_WINDOWS:
     _app_root = Path(os.environ.get("APPDATA", str(Path.home()))) / "FormoraReport"
-    _documents_root = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+    _documents_root = (
+        Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+    )
 else:
     # macOS/Linux：遵循 XDG 规范（~/.config/FormoraReport）；文档目录探测真实 Documents
-    _app_root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "FormoraReport"
+    _app_root = (
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        / "FormoraReport"
+    )
     _candidates = [
         Path.home() / "Documents",
         Path.home() / "文档",
@@ -59,13 +66,17 @@ def _dpapi_encrypt(plain: str) -> str:
     import ctypes.wintypes
 
     class _DataBlob(ctypes.Structure):
-        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+        _fields_ = [
+            ("cbData", ctypes.wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
 
     data = plain.encode("utf-8")
     in_blob = _DataBlob(len(data), ctypes.cast(data, ctypes.POINTER(ctypes.c_char)))
     out_blob = _DataBlob()
     if not ctypes.windll.crypt32.CryptProtectData(
-            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)
+    ):
         raise UserError("DPAPI 加密失败。")
     try:
         encrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
@@ -82,13 +93,19 @@ def _dpapi_decrypt(enc_b64: str) -> str:
     import ctypes.wintypes
 
     class _DataBlob(ctypes.Structure):
-        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+        _fields_ = [
+            ("cbData", ctypes.wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
 
     encrypted = base64.b64decode(enc_b64)
-    in_blob = _DataBlob(len(encrypted), ctypes.cast(encrypted, ctypes.POINTER(ctypes.c_char)))
+    in_blob = _DataBlob(
+        len(encrypted), ctypes.cast(encrypted, ctypes.POINTER(ctypes.c_char))
+    )
     out_blob = _DataBlob()
     if not ctypes.windll.crypt32.CryptUnprotectData(
-            ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)
+    ):
         raise UserError("DPAPI 解密失败（可能配置被移动或系统账户变更）。")
     try:
         decrypted = ctypes.string_at(out_blob.pbData, out_blob.cbData)
@@ -108,20 +125,22 @@ class Config:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
             except Exception:
                 raw = {}
-            merged = json.loads(json.dumps(DEFAULTS))
+            merged = copy.deepcopy(DEFAULTS)
             merged.update(raw)
             if isinstance(merged.get("ai"), dict):
                 ai = dict(DEFAULTS["ai"])
                 ai.update(merged["ai"])
                 merged["ai"] = ai
             return merged
-        return json.loads(json.dumps(DEFAULTS))
+        return copy.deepcopy(DEFAULTS)
 
     def save(self):
         """原子写配置：先写临时文件再替换，避免崩溃/断电损坏 config.json。"""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(
+            json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         os.replace(str(tmp), str(self.path))
 
     def get(self, key: str, default=None):
@@ -144,6 +163,6 @@ class Config:
             return ""
 
 
-def ensure_dirs():
+def ensure_dirs() -> None:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)

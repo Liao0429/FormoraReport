@@ -1,4 +1,5 @@
 """验证 2.1.1 修复：批量生成每份报告只含当前行数据，而非整表。"""
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,14 +24,22 @@ def _make_state(tmp_path):
     template = template_parser.parse_template(TEMPLATE)
     data = data_reader.read_data(DATA)
     mappings = mapper.auto_map(template, data)
-    constants = {"实验名称": "批量语义", "实验目的": "验证", "实验环境": "本机",
-                 "实验步骤": "步骤", "实验结果": "结果", "问题分析": "无", "实验结论": "结论"}
+    constants = {
+        "实验名称": "批量语义",
+        "实验目的": "验证",
+        "实验环境": "本机",
+        "实验步骤": "步骤",
+        "实验结果": "结果",
+        "问题分析": "无",
+        "实验结论": "结论",
+    }
     for m in mappings:
         if m.source_type == "constant" and m.template_field in constants:
             m.constant_value = constants[m.template_field]
     task = ReportTask(name="批量语义", template_path=TEMPLATE)
-    return SimpleNamespace(config=cfg, template=template, data=data,
-                            mappings=mappings, task=task)
+    return SimpleNamespace(
+        config=cfg, template=template, data=data, mappings=mappings, task=task
+    )
 
 
 class TestBatchDataRowsSemantics:
@@ -51,7 +60,8 @@ class TestBatchDataRowsSemantics:
             for j, other in enumerate(state.data.rows):
                 if j != i:
                     assert str(other.get("项目")) not in texts, (
-                        f"报告 {i} 不应包含第 {j} 行数据 {other.get('项目')}")
+                        f"报告 {i} 不应包含第 {j} 行数据 {other.get('项目')}"
+                    )
 
     def test_single_uses_resolve_values_with_text_type(self, tmp_path):
         """批量路径复用 mapper.resolve_values，text 类型字段也能渲染。"""

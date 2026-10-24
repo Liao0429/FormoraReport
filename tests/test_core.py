@@ -8,6 +8,7 @@
 - 校验
 - 错误处理：不支持格式、不存在的文件、损坏模板
 """
+
 import sys
 import tempfile
 from pathlib import Path
@@ -39,6 +40,7 @@ def ensure_samples():
     """确保样例存在（仅缺时生成，避免改动已跟踪的样例文件）。"""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     from make_samples import make_csv, make_template
+
     SAMPLES.mkdir(parents=True, exist_ok=True)
     if not TEMPLATE.exists():
         make_template(TEMPLATE)
@@ -155,8 +157,12 @@ class TestMapper:
 
     def test_resolve_values(self):
         mappings = [
-            FieldMapping(template_field="姓名", source_type="column", source_column="学生姓名"),
-            FieldMapping(template_field="备注", source_type="constant", constant_value="无"),
+            FieldMapping(
+                template_field="姓名", source_type="column", source_column="学生姓名"
+            ),
+            FieldMapping(
+                template_field="备注", source_type="constant", constant_value="无"
+            ),
         ]
         ctx = mapper.resolve_values(mappings, row={"学生姓名": "张三"})
         assert ctx["姓名"] == "张三"
@@ -188,16 +194,22 @@ class TestGenerator:
         chart.generate_line_chart(
             [str(r["项目"]) for r in ds.rows],
             [float(r["数值"]) for r in ds.rows],
-            chart_png, title="测试图")
+            chart_png,
+            title="测试图",
+        )
         assert chart_png.exists()
 
         out = generator.generate_report(
-            TEMPLATE, context, OUT / "test_output.docx",
-            image_vars={"chart": str(chart_png)})
+            TEMPLATE,
+            context,
+            OUT / "test_output.docx",
+            image_vars={"chart": str(chart_png)},
+        )
         assert out.exists()
 
         # 输出可打开且内容正确
         from docx import Document
+
         doc = Document(str(out))
         texts = " ".join(p.text for p in doc.paragraphs)
         assert "测试实验" in texts
@@ -214,25 +226,34 @@ class TestGenerator:
         chart_png = OUT / "test_chart2.png"
         chart.generate_line_chart([1, 2, 3], [4, 5, 6], chart_png, title="图")
         out = generator.generate_report(
-            TEMPLATE, context, OUT / "test_img.docx",
-            image_vars={"chart": str(chart_png)})
+            TEMPLATE,
+            context,
+            OUT / "test_img.docx",
+            image_vars={"chart": str(chart_png)},
+        )
         from docx import Document
+
         doc = Document(str(out))
         assert len(doc.inline_shapes) > 0, "输出文档应包含内嵌图片"
 
     def test_generate_missing_image_raises(self):
         """绑定的图片文件不存在时应抛出 ExternalDependencyError。"""
         from formora.core.errors import ExternalDependencyError
+
         info = template_parser.parse_template(TEMPLATE)
         context = {"实验名称": "x"}
         with pytest.raises(ExternalDependencyError):
             generator.generate_report(
-                TEMPLATE, context, OUT / "bad_img.docx",
+                TEMPLATE,
+                context,
+                OUT / "bad_img.docx",
                 image_vars={"chart": str(OUT / "不存在的图.png")},
-                template_info=info)
+                template_info=info,
+            )
 
     def test_generate_no_placeholders_fails(self):
         from docx import Document
+
         no_ph = OUT / "no_placeholder.docx"
         doc = Document()
         doc.add_paragraph("没有任何占位符")
@@ -249,16 +270,23 @@ class TestValidator:
         names = {i.field for i in issues}
         assert "姓名" in names
         # chart 在 image_placeholders 中应被跳过
-        issues2 = validator.validate_context(context, info, image_placeholders={"chart"})
+        issues2 = validator.validate_context(
+            context, info, image_placeholders={"chart"}
+        )
         names2 = {i.field for i in issues2}
         assert "chart" not in names2
 
     def test_validate_mappings(self):
         from formora.core.models import FieldMapping
+
         mappings = [
             FieldMapping(template_field="姓名", source_type="column", source_column=""),
-            FieldMapping(template_field="备注", source_type="constant", constant_value=""),
-            FieldMapping(template_field="学号", source_type="constant", constant_value="123"),
+            FieldMapping(
+                template_field="备注", source_type="constant", constant_value=""
+            ),
+            FieldMapping(
+                template_field="学号", source_type="constant", constant_value="123"
+            ),
         ]
         issues = validator.validate_mappings(mappings)
         by_field = {i.field: i for i in issues}

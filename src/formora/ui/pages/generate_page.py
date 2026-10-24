@@ -1,8 +1,8 @@
 """生成结果页：输出路径、日志、操作按钮。"""
+
 from __future__ import annotations
 
 import os
-import subprocess
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
@@ -70,7 +70,8 @@ class GeneratePage(QWidget):
             self.out_edit.setText(self.state.output_path)
             logs = self.state.task.logs if self.state.task else []
             self.log_text.setPlainText(
-                "\n".join(f"[{l.level}] {l.message}" for l in logs) or "（无日志）")
+                "\n".join(f"[{l.level}] {l.message}" for l in logs) or "（无日志）"
+            )
         # 有批次目录才允许批量导出 PDF
         if hasattr(self, "batch_pdf_btn"):
             has_batch = bool(getattr(self.state, "last_batch_dir", None))
@@ -88,6 +89,7 @@ class GeneratePage(QWidget):
             QMessageBox.warning(self, "提示", "还没有输出文件。")
             return
         from formora.core import pdf_exporter
+
         try:
             out = self.state.output_path.replace(".docx", ".pdf")
             pdf_exporter.export_pdf(self.state.output_path, out)
@@ -98,11 +100,13 @@ class GeneratePage(QWidget):
     def _export_batch_pdf(self):
         """把当前批次目录下的所有 DOCX 转为 PDF（串行，避免 LibreOffice 冲突）。"""
         import glob
+
         batch_dir = getattr(self.state, "last_batch_dir", None)
         if not batch_dir or not os.path.isdir(batch_dir):
             QMessageBox.warning(self, "提示", "没有可用的批次目录。")
             return
         from formora.services.report_service import batch_export_pdf
+
         docx_files = sorted(glob.glob(os.path.join(batch_dir, "*.docx")))
         if not docx_files:
             QMessageBox.warning(self, "提示", "批次目录里没有 DOCX 文件。")

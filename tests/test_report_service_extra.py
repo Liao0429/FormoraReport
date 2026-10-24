@@ -1,4 +1,5 @@
 """报告服务补充测试：字段判定、文件名清洗、上下文构造、批量导出。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,7 +31,7 @@ class TestFieldPredicates:
         assert is_chart_field("曲线图")
         assert not is_chart_field("姓名")
         assert not is_chart_field("")
-        assert not is_chart_field("地图")   # 排除词
+        assert not is_chart_field("地图")  # 排除词
 
     def test_is_image_field_excludes(self):
         assert is_image_field("截图")
@@ -41,7 +42,7 @@ class TestFieldPredicates:
 
 class TestSanitizeFilename:
     def test_removes_illegal_chars(self):
-        assert sanitize_filename('任务:名*称?') == "任务名称"
+        assert sanitize_filename("任务:名*称?") == "任务名称"
 
     def test_strips_edges(self):
         assert sanitize_filename("  任务  ") == "任务"
@@ -68,6 +69,7 @@ class TestFormatRows:
 
     def test_datetime_to_date(self):
         import datetime
+
         rows = [{"日期": datetime.datetime(2026, 10, 25, 8, 0)}]
         assert _format_rows(rows) == [{"日期": "2026-10-25"}]
 
@@ -75,15 +77,18 @@ class TestFormatRows:
 class TestOutputDir:
     def test_empty_config_falls_back_to_default(self, tmp_path, monkeypatch):
         from formora.services import config as config_module
+
         default = tmp_path / "Documents" / "FormoraReport"
         monkeypatch.setattr(config_module, "OUTPUT_DEFAULT_DIR", default)
 
         from formora.services.config import Config
+
         cfg = Config(tmp_path / "config.json")
         cfg.set("output_dir", "")
 
         class FakeTask:
             name = "x"
+
         state = type("State", (), {"config": cfg, "task": FakeTask()})()
         out = _output_dir(state)
         assert out == default
@@ -91,6 +96,7 @@ class TestOutputDir:
 
     def test_custom_output_dir(self, tmp_path):
         from formora.services.config import Config
+
         cfg = Config(tmp_path / "config.json")
         custom = tmp_path / "custom"
         cfg.set("output_dir", str(custom))
@@ -117,9 +123,13 @@ class TestAutoChartEnabled:
 class TestImagePlaceholders:
     def test_includes_auto_chart_placeholders(self):
         mappings = [
-            FieldMapping(template_field="姓名", source_type="column", source_column="姓名"),
+            FieldMapping(
+                template_field="姓名", source_type="column", source_column="姓名"
+            ),
             FieldMapping(template_field="图表", source_type="image", value=""),
-            FieldMapping(template_field="曲线图", source_type="column", source_column="数值"),
+            FieldMapping(
+                template_field="曲线图", source_type="column", source_column="数值"
+            ),
         ]
         state = type("State", (), {"mappings": mappings})()
         s = image_placeholders(state, auto_chart_enabled=True)
@@ -130,7 +140,9 @@ class TestImagePlaceholders:
     def test_without_auto_chart_only_explicit_images(self):
         mappings = [
             FieldMapping(template_field="图表", source_type="image", value=""),
-            FieldMapping(template_field="姓名", source_type="column", source_column="姓名"),
+            FieldMapping(
+                template_field="姓名", source_type="column", source_column="姓名"
+            ),
         ]
         state = type("State", (), {"mappings": mappings})()
         s = image_placeholders(state, auto_chart_enabled=False)
@@ -146,7 +158,9 @@ class TestDropUncoveredImageFields:
         assert "姓名" in ctx
 
     def test_keeps_covered(self):
-        mappings = [FieldMapping(template_field="图", source_type="image", value="a.png")]
+        mappings = [
+            FieldMapping(template_field="图", source_type="image", value="a.png")
+        ]
         ctx = {"图": None}
         _drop_uncovered_image_fields(ctx, mappings, image_vars={"图": "a.png"})
         assert "图" in ctx
@@ -155,11 +169,21 @@ class TestDropUncoveredImageFields:
 class TestResolveContext:
     def test_no_data_rows_for_non_tabular(self, make_config):
         cfg = make_config()
-        state = type("State", (), {
-            "config": cfg,
-            "data": DataSource(path=Path("t.txt"), kind="txt", text="文字"),
-            "mappings": [FieldMapping(template_field="结论", source_type="constant", constant_value="c")],
-        })()
+        state = type(
+            "State",
+            (),
+            {
+                "config": cfg,
+                "data": DataSource(path=Path("t.txt"), kind="txt", text="文字"),
+                "mappings": [
+                    FieldMapping(
+                        template_field="结论",
+                        source_type="constant",
+                        constant_value="c",
+                    )
+                ],
+            },
+        )()
         ctx = report_service.resolve_context(state)
         assert ctx["结论"] == "c"
         assert "data_rows" not in ctx
@@ -174,11 +198,15 @@ class TestGenerateErrors:
 
     def test_generate_batch_with_text_data(self, make_config):
         cfg = make_config()
-        state = type("State", (), {
-            "config": cfg,
-            "template": object(),
-            "data": DataSource(path=Path("t.txt"), kind="txt", text="文字"),
-        })()
+        state = type(
+            "State",
+            (),
+            {
+                "config": cfg,
+                "template": object(),
+                "data": DataSource(path=Path("t.txt"), kind="txt", text="文字"),
+            },
+        )()
         with pytest.raises(FormoraError):
             generate_batch(state)
 
@@ -192,8 +220,12 @@ class TestGenerateErrors:
 class TestBatchExportPdf:
     def test_all_success(self, tmp_path, monkeypatch):
         from formora.core import pdf_exporter
-        monkeypatch.setattr(pdf_exporter, "export_pdf",
-                            lambda docx, out: Path(out).write_bytes(b"pdf") or Path(out))
+
+        monkeypatch.setattr(
+            pdf_exporter,
+            "export_pdf",
+            lambda docx, out: Path(out).write_bytes(b"pdf") or Path(out),
+        )
         docx1 = tmp_path / "a.docx"
         docx2 = tmp_path / "b.docx"
         docx1.write_bytes(b"x")

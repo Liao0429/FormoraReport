@@ -1,6 +1,6 @@
 """设置中心：主题、输出目录、AI 模式配置（密钥加密）、隐私说明。"""
-from __future__ import annotations
 
+from __future__ import annotations
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -60,7 +60,8 @@ class SettingsPage(QWidget):
         ai_hint = hint_label(
             "AI 模式是可选增强，需你主动启用。启用后，生成内容会调用你配置的模型；"
             "密钥不明文落盘、不进日志，但会作为认证凭据随每个 AI 请求发送到你配置的 API 服务器。"
-            "AI 不会在后台静默上传文档。")
+            "AI 不会在后台静默上传文档。"
+        )
         ai_card.add_widget(ai_hint)
         ai_form = QFormLayout()
         self.ai_enabled = QCheckBox("启用 AI 智能模式")
@@ -94,17 +95,22 @@ class SettingsPage(QWidget):
 
         # 隐私
         privacy = Card("隐私与数据")
-        privacy.add_widget(hint_label(
-            "· 无 AI 模式下所有文件都在本机处理，不联网。\n"
-            "· AI 模式下，仅在你点击生成/审查时发送必要内容到所配置的 API。\n"
-            "· API 密钥用 Windows DPAPI 加密存储，不明文落盘。\n"
-            "· 日志仅记录操作摘要，不包含文档正文与密钥。"))
+        privacy.add_widget(
+            hint_label(
+                "· 无 AI 模式下所有文件都在本机处理，不联网。\n"
+                "· AI 模式下，仅在你点击生成/审查时发送必要内容到所配置的 API。\n"
+                "· API 密钥用 Windows DPAPI 加密存储，不明文落盘。\n"
+                "· 日志仅记录操作摘要，不包含文档正文与密钥。"
+            )
+        )
         lay.addWidget(privacy)
         lay.addStretch(1)
 
     def _load(self):
         cfg = self.state.config
-        self.theme_combo.setCurrentIndex(0 if cfg.get("theme", "light") == "light" else 1)
+        self.theme_combo.setCurrentIndex(
+            0 if cfg.get("theme", "light") == "light" else 1
+        )
         self.outdir_edit.setText(cfg.get("output_dir"))
         ai = cfg.get("ai", {})
         self.ai_enabled.setChecked(bool(ai.get("enabled")))
@@ -127,7 +133,9 @@ class SettingsPage(QWidget):
             cfg.set_ai_api_key(self.ai_key.text().strip())
             self.ai_key.clear()
         cfg.save()
-        self.on_theme_change("light" if self.theme_combo.currentIndex() == 0 else "dark")
+        self.on_theme_change(
+            "light" if self.theme_combo.currentIndex() == 0 else "dark"
+        )
         QMessageBox.information(self, "已保存", "设置已保存。")
 
     def _test_ai(self):
@@ -145,6 +153,8 @@ class SettingsPage(QWidget):
             QMessageBox.critical(self, "连接失败", str(e))
 
     def _pick_output_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "选择输出目录", self.outdir_edit.text())
+        path = QFileDialog.getExistingDirectory(
+            self, "选择输出目录", self.outdir_edit.text()
+        )
         if path:
             self.outdir_edit.setText(path)

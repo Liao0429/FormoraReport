@@ -1,4 +1,5 @@
 """服务层单元与集成测试：日志分类、历史记录、报告服务。"""
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -78,7 +79,8 @@ class TestReportService:
 
     def test_materials_text_tabular(self):
         data = DataSource(
-            path=Path("d.csv"), kind="csv",
+            path=Path("d.csv"),
+            kind="csv",
             columns=["项目", "数值"],
             rows=[{"项目": "样本A", "数值": 12.5}, {"项目": "样本B", "数值": 18.2}],
         )
@@ -99,12 +101,14 @@ class TestReportService:
         cfg = Config(tmp_path / "config.json")
         cfg.set("output_dir", str(tmp_path / "out"))
         data = DataSource(
-            path=DATA, kind="csv",
+            path=DATA,
+            kind="csv",
             columns=["项目", "数值"],
             rows=[{"项目": "A", "数值": 1.0}, {"项目": "B", "数值": 2.0}],
         )
         state = SimpleNamespace(
-            data=data, config=cfg,
+            data=data,
+            config=cfg,
             task=ReportTask(name="自动图表", template_path=TEMPLATE),
         )
         img = auto_chart(state)
@@ -116,7 +120,8 @@ class TestReportService:
         cfg.set("output_dir", str(tmp_path / "out"))
         state = SimpleNamespace(
             data=DataSource(path=Path("t.txt"), kind="txt", text="文字"),
-            config=cfg, task=ReportTask(name="x", template_path=TEMPLATE),
+            config=cfg,
+            task=ReportTask(name="x", template_path=TEMPLATE),
         )
         assert auto_chart(state) is None
 
@@ -144,7 +149,11 @@ def _make_state(tmp_path):
 
     task = ReportTask(name="服务层集成", template_path=TEMPLATE)
     return SimpleNamespace(
-        config=cfg, template=template, data=data, mappings=mappings, task=task,
+        config=cfg,
+        template=template,
+        data=data,
+        mappings=mappings,
+        task=task,
     )
 
 
@@ -158,6 +167,7 @@ class TestGenerateSingleIntegration:
 
         assert out.exists()
         from docx import Document
+
         texts = " ".join(p.text for p in Document(str(out)).paragraphs)
         assert "集成测试实验" in texts
 

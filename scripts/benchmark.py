@@ -9,9 +9,12 @@
 - 峰值内存（若 psutil 可用）
 输出：reports/PERF_REPORT.md 数据源。
 """
+
 from __future__ import annotations
 
-import sys, time, gc
+import gc
+import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -25,6 +28,7 @@ DATA = SAMPLES / "实验数据.csv"
 
 try:
     import psutil
+
     _HAS_PSUTIL = True
 except Exception:
     _HAS_PSUTIL = False
@@ -45,7 +49,9 @@ def main():
 
     # 1) 模板解析
     info, t_parse = timed(template_parser.parse_template, TEMPLATE)
-    print(f"模板解析: {t_parse:.1f} ms | 占位符 {len(info.placeholders)} 个, 章节 {len(info.sections)} 个")
+    print(
+        f"模板解析: {t_parse:.1f} ms | 占位符 {len(info.placeholders)} 个, 章节 {len(info.sections)} 个"
+    )
 
     # 2) 数据读取
     ds, t_data = timed(data_reader.read_data, DATA)
@@ -54,8 +60,18 @@ def main():
     # 3) 单文档生成
     def gen_one():
         mappings = mapper.auto_map(info, ds)
-        constants = {f: f"基准测试内容 {f}" for f in
-                     ["实验名称", "实验目的", "实验环境", "实验步骤", "实验结果", "问题分析", "实验结论"]}
+        constants = {
+            f: f"基准测试内容 {f}"
+            for f in [
+                "实验名称",
+                "实验目的",
+                "实验环境",
+                "实验步骤",
+                "实验结果",
+                "问题分析",
+                "实验结论",
+            ]
+        }
         for m in mappings:
             if m.source_type == "constant" and m.template_field in constants:
                 m.constant_value = constants[m.template_field]
@@ -63,9 +79,11 @@ def main():
         ctx["data_rows"] = ds.rows
         img = OUT / "bench_chart.png"
         chart.generate_line_chart(
-            [str(r["项目"]) for r in ds.rows], [float(r["数值"]) for r in ds.rows], img)
-        return generator.generate_report(TEMPLATE, ctx, OUT / "bench_single.docx",
-                                           image_vars={"chart": str(img)})
+            [str(r["项目"]) for r in ds.rows], [float(r["数值"]) for r in ds.rows], img
+        )
+        return generator.generate_report(
+            TEMPLATE, ctx, OUT / "bench_single.docx", image_vars={"chart": str(img)}
+        )
 
     out1, t_single = timed(gen_one)
     print(f"单文档生成（含图表）: {t_single:.1f} ms -> {out1.name}")
@@ -73,8 +91,18 @@ def main():
     # 4) 批量生成 100 份
     def gen_batch(n=100):
         mappings = mapper.auto_map(info, ds)
-        constants = {f: f"批量内容 {f}" for f in
-                     ["实验名称", "实验目的", "实验环境", "实验步骤", "实验结果", "问题分析", "实验结论"]}
+        constants = {
+            f: f"批量内容 {f}"
+            for f in [
+                "实验名称",
+                "实验目的",
+                "实验环境",
+                "实验步骤",
+                "实验结果",
+                "问题分析",
+                "实验结论",
+            ]
+        }
         for m in mappings:
             if m.source_type == "constant" and m.template_field in constants:
                 m.constant_value = constants[m.template_field]
@@ -117,7 +145,9 @@ def main():
         counters = PROCESS_MEMORY_COUNTERS()
         ok = ctypes.windll.psapi.GetProcessMemoryInfo(
             ctypes.windll.kernel32.GetCurrentProcess(),
-            ctypes.byref(counters), ctypes.sizeof(counters))
+            ctypes.byref(counters),
+            ctypes.sizeof(counters),
+        )
         if ok:
             mem = f"{counters.WorkingSetSize / 1024 / 1024:.1f} MB"
         else:

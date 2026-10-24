@@ -1,4 +1,5 @@
 """图表生成补充测试：空数据、多系列、长度不一致。"""
+
 from __future__ import annotations
 
 import pytest
@@ -39,4 +40,5 @@ class TestMultiLineExtra:
     def test_series_length_mismatch_raises(self, tmp_path):
         with pytest.raises(DocumentFormatError):
             chart.generate_multi_line_chart(
-                ["A", "B"], {"s1": [1.0]}, tmp_path / "x.png")
+                ["A", "B"], {"s1": [1.0]}, tmp_path / "x.png"
+            )

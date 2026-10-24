@@ -3,9 +3,8 @@
 把原本写在 mapping_page 里的业务编排抽成纯函数，供桌面端 UI、
 以及未来的后端 API（小程序/App 前端透传 AI 请求）复用。
 """
-from __future__ import annotations
 
-from typing import Any
+from __future__ import annotations
 
 from formora.core.models import FieldMapping
 

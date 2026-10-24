@@ -5,6 +5,7 @@
 - 小写化；
 - 常见同义：姓名/学生姓名/名字；学号/ID/student_id 等。
 """
+
 from __future__ import annotations
 
 import re
@@ -60,11 +61,20 @@ def auto_map(template: TemplateInfo, data: DataSource | None) -> list[FieldMappi
                     break
 
         if matched_col:
-            mappings.append(FieldMapping(
-                template_field=ph, source_type="column", source_column=matched_col, required=True))
+            mappings.append(
+                FieldMapping(
+                    template_field=ph,
+                    source_type="column",
+                    source_column=matched_col,
+                    required=True,
+                )
+            )
         else:
-            mappings.append(FieldMapping(
-                template_field=ph, source_type="constant", constant_value=""))
+            mappings.append(
+                FieldMapping(
+                    template_field=ph, source_type="constant", constant_value=""
+                )
+            )
 
     return mappings
 
@@ -93,6 +103,7 @@ def _format_value(v) -> str:
         return str(v)
     # 处理 pandas Timestamp（datetime 子类）
     import datetime as _dt
+
     if isinstance(v, _dt.datetime):
         return v.strftime("%Y-%m-%d")
     if isinstance(v, _dt.date):
@@ -100,7 +111,9 @@ def _format_value(v) -> str:
     return str(v)
 
 
-def resolve_values(mappings: list[FieldMapping], row: dict | None = None) -> dict[str, object]:
+def resolve_values(
+    mappings: list[FieldMapping], row: dict | None = None
+) -> dict[str, object]:
     """根据映射与当前数据行解析出模板上下文。"""
     context: dict[str, object] = {}
     for m in mappings:

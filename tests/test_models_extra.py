@@ -1,4 +1,5 @@
 """核心数据模型补充测试：默认值、属性、边界行为。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,16 +66,19 @@ class TestTemplateInfo:
         assert "实验结论" in missing
 
     def test_missing_core_fields_all_present(self):
-        t = TemplateInfo(path=Path("x.docx"), sections={
-            "实验名称": "一、实验名称",
-            "实验目的": "二、实验目的",
-            "实验环境": "三、实验环境",
-            "实验步骤": "四、实验步骤",
-            "实验数据": "五、实验数据",
-            "实验结果": "六、实验结果",
-            "问题分析": "七、问题分析",
-            "实验结论": "八、实验结论",
-        })
+        t = TemplateInfo(
+            path=Path("x.docx"),
+            sections={
+                "实验名称": "一、实验名称",
+                "实验目的": "二、实验目的",
+                "实验环境": "三、实验环境",
+                "实验步骤": "四、实验步骤",
+                "实验数据": "五、实验数据",
+                "实验结果": "六、实验结果",
+                "问题分析": "七、问题分析",
+                "实验结论": "八、实验结论",
+            },
+        )
         # 模板缺"结论"章节（CORE_FIELDS 含"结论"）
         assert t.missing_core_fields == ["结论"]
 
@@ -93,5 +97,7 @@ class TestReportTask:
         assert [l.message for l in task.logs] == ["a", "b"]
 
     def test_ids_unique(self):
-        ids = {ReportTask(name="a", template_path=Path("t.docx")).id for _ in range(100)}
+        ids = {
+            ReportTask(name="a", template_path=Path("t.docx")).id for _ in range(100)
+        }
         assert len(ids) == 100

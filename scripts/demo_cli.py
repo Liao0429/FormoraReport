@@ -7,6 +7,7 @@
   source .venv/Scripts/activate
   python scripts/demo_cli.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,7 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from formora.core import chart, data_reader, generator, mapper, template_parser, validator
+from formora.core import (
+    chart,
+    data_reader,
+    generator,
+    mapper,
+    template_parser,
+    validator,
+)
 from formora.core.errors import FormoraError
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
@@ -41,7 +49,9 @@ def main():
     print("3) 自动字段映射")
     mappings = mapper.auto_map(info, ds)
     for m in mappings:
-        print(f"   {m.template_field} -> {m.source_type}:{m.source_column or m.constant_value!r}")
+        print(
+            f"   {m.template_field} -> {m.source_type}:{m.source_column or m.constant_value!r}"
+        )
 
     # 为文本型核心字段填入示例内容（真实使用中由用户提供/ AI 生成）
     constants = {
@@ -63,7 +73,9 @@ def main():
     xs = [str(r["项目"]) for r in ds.rows]
     ys = [float(r["数值"]) for r in ds.rows]
     chart_png = OUT / "实验数据图表.png"
-    chart.generate_line_chart(xs, ys, chart_png, title="实验数据折线图", x_label="样本", y_label="数值")
+    chart.generate_line_chart(
+        xs, ys, chart_png, title="实验数据折线图", x_label="样本", y_label="数值"
+    )
     print(f"   图表已生成: {chart_png}")
 
     print("5) 解析上下文并生成 DOCX")
@@ -73,7 +85,9 @@ def main():
     context["chart"] = None  # 占位，实际用 image_vars 注入 InlineImage
 
     output = generator.generate_report(
-        template_path, context, OUT / "实验报告_输出.docx",
+        template_path,
+        context,
+        OUT / "实验报告_输出.docx",
         image_vars={"chart": str(chart_png)},
     )
     print(f"   输出: {output}")
@@ -85,6 +99,7 @@ def main():
 
     print("7) 验证输出可打开")
     from docx import Document
+
     doc = Document(str(output))
     texts = [p.text for p in doc.paragraphs if p.text.strip()]
     print(f"   段落数={len(texts)}")

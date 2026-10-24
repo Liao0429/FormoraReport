@@ -8,6 +8,7 @@
 - 根背景半透明（配合 window_effects 的 Mica 系统背景；无 Mica 时叠加浅色渐变）
 - 窗口为无边框时由 main_window 提供自定义标题栏
 """
+
 from __future__ import annotations
 
 from PySide6.QtGui import QFont

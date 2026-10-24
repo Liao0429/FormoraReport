@@ -1,4 +1,5 @@
 """跨页面共享的应用状态：当前任务、模板、数据、映射、输出。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ class AppState:
 
     def new_task(self, name: str = "新任务"):
         from formora.services.history import now_str
+
         self.task = ReportTask(name=name, template_path=None, created_at=now_str())
         self.template = None
         self.data = None

@@ -1,4 +1,5 @@
 """AI 客户端离线测试：不发起真实网络请求，用 monkeypatch 模拟 HTTP 层。"""
+
 import json
 import sys
 from pathlib import Path
@@ -34,6 +35,7 @@ def _install_fake_urlopen(monkeypatch, payload: bytes, captured: dict | None = N
             captured["headers"] = dict(req.headers)
             captured["timeout"] = timeout
         return _FakeResp(payload)
+
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
 
@@ -44,7 +46,9 @@ class TestIsConfigured:
 
     def test_configured_when_enabled_key_and_url(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         assert ai_client.is_configured(cfg)
 
@@ -54,8 +58,11 @@ class TestPostChat:
         captured: dict = {}
         _install_fake_urlopen(monkeypatch, b'{"ok":true}', captured)
         body = ai_client._post_chat(
-            "https://example.com/v1", "model-x", "secret",
-            [{"role": "user", "content": "hi"}], json_mode=True,
+            "https://example.com/v1",
+            "model-x",
+            "secret",
+            [{"role": "user", "content": "hi"}],
+            json_mode=True,
         )
         assert captured["url"] == "https://example.com/v1/chat/completions"
         assert captured["payload"]["model"] == "model-x"
@@ -66,13 +73,16 @@ class TestPostChat:
 
     def test_appends_v1_when_missing(self, monkeypatch):
         captured: dict = {}
-        _install_fake_urlopen(monkeypatch, b'{}', captured)
-        ai_client._post_chat("https://example.com", "m", "k", [{"role": "user", "content": "x"}])
+        _install_fake_urlopen(monkeypatch, b"{}", captured)
+        ai_client._post_chat(
+            "https://example.com", "m", "k", [{"role": "user", "content": "x"}]
+        )
         assert captured["url"] == "https://example.com/v1/chat/completions"
 
     def test_wraps_network_errors(self, monkeypatch):
         def boom(req, timeout=60):
             raise OSError("网络不可用")
+
         monkeypatch.setattr("urllib.request.urlopen", boom)
         with pytest.raises(ExternalDependencyError):
             ai_client._post_chat("https://example.com", "m", "k", [])
@@ -100,20 +110,31 @@ class TestExtractFields:
 
     def test_parses_fields_from_response(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
 
-        content = json.dumps({
-            "fields": [{
-                "field": "实验名称",
-                "value": "测试实验",
-                "source": "素材.txt",
-                "needs_confirmation": False,
-            }],
-        })
-        _install_fake_urlopen(monkeypatch, json.dumps({
-            "choices": [{"message": {"content": content}}],
-        }).encode("utf-8"))
+        content = json.dumps(
+            {
+                "fields": [
+                    {
+                        "field": "实验名称",
+                        "value": "测试实验",
+                        "source": "素材.txt",
+                        "needs_confirmation": False,
+                    }
+                ],
+            }
+        )
+        _install_fake_urlopen(
+            monkeypatch,
+            json.dumps(
+                {
+                    "choices": [{"message": {"content": content}}],
+                }
+            ).encode("utf-8"),
+        )
 
         fields = ai_client.extract_fields(cfg, "素材内容", ["实验名称"])
         assert fields[0]["field"] == "实验名称"
@@ -125,13 +146,22 @@ class TestExtractFields:
 class TestReviewReport:
     def test_parses_issues_from_response(self, tmp_path, monkeypatch):
         cfg = Config(tmp_path / "config.json")
-        cfg.set("ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"})
+        cfg.set(
+            "ai", {"enabled": True, "base_url": "https://example.com/v1", "model": "m"}
+        )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
 
-        content = json.dumps({"issues": [{"field": "实验结论", "issue": "为空", "severity": "error"}]})
-        _install_fake_urlopen(monkeypatch, json.dumps({
-            "choices": [{"message": {"content": content}}],
-        }).encode("utf-8"))
+        content = json.dumps(
+            {"issues": [{"field": "实验结论", "issue": "为空", "severity": "error"}]}
+        )
+        _install_fake_urlopen(
+            monkeypatch,
+            json.dumps(
+                {
+                    "choices": [{"message": {"content": content}}],
+                }
+            ).encode("utf-8"),
+        )
 
         issues = ai_client.review_report(cfg, "报告文本")
         assert issues[0]["field"] == "实验结论"

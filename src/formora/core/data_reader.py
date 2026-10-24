@@ -4,6 +4,7 @@
 - TXT/MD 作为纯文本数据。
 - PDF 用 pdfplumber 提取文本（仅机器生成 PDF 可靠；扫描件需 OCR，属可选增强）。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,7 +33,8 @@ def read_data(path: str | Path) -> DataSource:
     suffix = path.suffix.lower()
     if suffix == ".xls":
         raise DocumentFormatError(
-            "暂不支持旧版 .xls 格式。请在 Excel 中将文件另存为 .xlsx 后重试。")
+            "暂不支持旧版 .xls 格式。请在 Excel 中将文件另存为 .xlsx 后重试。"
+        )
     kind_map = {
         ".csv": "csv",
         ".xlsx": "xlsx",

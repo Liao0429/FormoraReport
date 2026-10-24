@@ -4,6 +4,7 @@
 - 系统 Mica 背景：show 后尝试启用，失败自动降级为 QSS 渐变背景
 - 页面切换：淡入动画（animations.page_transition）
 """
+
 from __future__ import annotations
 
 import sys
@@ -166,13 +167,16 @@ class MainWindow(QMainWindow):
             return super().nativeEvent(event_type, message)
         import ctypes
         import ctypes.wintypes
+
         try:
             msg = ctypes.wintypes.MSG.from_address(int(message))
             if msg.message == 0x0084:  # WM_NCHITTEST
                 x = ctypes.c_short(msg.lParam & 0xFFFF).value
                 y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
                 rect = ctypes.wintypes.RECT()
-                ctypes.windll.user32.GetWindowRect(int(self.winId()), ctypes.byref(rect))
+                ctypes.windll.user32.GetWindowRect(
+                    int(self.winId()), ctypes.byref(rect)
+                )
                 border = 6
                 left = x < rect.left + border
                 right = x > rect.right - border
@@ -231,6 +235,7 @@ class MainWindow(QMainWindow):
         self._refresh_statusbar()
         if self._mica_ok:
             from formora.ui.window_effects import apply_immersive_dark_mode
+
             try:
                 apply_immersive_dark_mode(int(self.winId()), dark=(name == "dark"))
             except Exception:
@@ -242,7 +247,9 @@ class MainWindow(QMainWindow):
             ai_enabled = bool(self.state.config.get("ai", {}).get("enabled"))
             if ai_enabled:
                 model = (self.state.config.get("ai", {}).get("model") or "").strip()
-                self.statusBar.showMessage("就绪 · AI 模式已启用" + (f" · {model}" if model else ""))
+                self.statusBar.showMessage(
+                    "就绪 · AI 模式已启用" + (f" · {model}" if model else "")
+                )
             else:
                 self.statusBar.showMessage("就绪 · 无 AI 模式（默认）")
         except Exception:
@@ -269,6 +276,7 @@ def _win_button(text: str, object_name: str) -> QPushButton:
 
 def _make_sidebar() -> QWidget:
     from PySide6.QtWidgets import QFrame
+
     f = QFrame()
     f.setObjectName("Sidebar")
     f.setFixedWidth(200)

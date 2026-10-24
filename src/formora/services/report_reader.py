@@ -3,6 +3,7 @@
 把原本写在 preview_page 里的文本抽取逻辑抽成纯函数，
 供桌面端 UI 预览、AI 审查、以及未来的后端 API 复用。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,12 +31,19 @@ def extract_report_text(docx_path: str | Path) -> str:
     if doc.inline_shapes:
         parts.append(
             f"\n📷 报告包含 {len(doc.inline_shapes)} 张图片"
-            "（文本预览不显示图片，请用 Word 打开查看排版效果）。")
+            "（文本预览不显示图片，请用 Word 打开查看排版效果）。"
+        )
     return "\n".join(parts)
 
 
-def extract_report_text_with_sources(docx_path: str | Path, ai_sources_text: str = "") -> str:
-    """抽取报告文本并追加 AI 来源追踪。"""
+def extract_report_text_with_sources(
+    docx_path: str | Path, ai_sources_text: str = ""
+) -> str:
+    """抽取报告文本并追加 AI 来源追踪文本。
+
+    ai_sources_text 为 AI 审查/填充的来源依据说明（如引用段落、文件名），
+    追加在正文末尾；空串时跳过，避免产生多余空行。
+    """
     text = extract_report_text(docx_path)
     if ai_sources_text:
         text += "\n" + ai_sources_text

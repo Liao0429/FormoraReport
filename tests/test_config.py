@@ -1,4 +1,5 @@
 """配置与 DPAPI 密钥加解密测试。"""
+
 import sys
 import tempfile
 from pathlib import Path

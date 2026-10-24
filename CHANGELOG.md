@@ -2,6 +2,37 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.8.0] - 2026-10-25
+
+### Fixed（API 层安全与健壮性——20 个多 Agent 全方位评审）
+
+**🔴 安全加固（API 层）**
+- **可选 API Key 鉴权**：配置 `FORMORA_API_KEY` 后，所有受保护端点要求 `Authorization: Bearer <token>`；`/api/health` 保持公开供探活
+- **上传大小限制**：`_save_upload` 流式计数，超限返回 413，防止磁盘/内存耗尽 DoS
+- **文件 TTL + 容量清理**：`_FILES`/`_TASKS` 带时间戳，过期自动淘汰；启动时清理工作目录残留，杜绝无限增长
+- **错误消息脱敏**：不再回显内部绝对路径，按 `FormoraError` 子类映射状态码（UserError→400 / DocumentFormatError→422 / ExternalDependencyError→503 / 其他→500），完整异常只记服务端日志
+- **DOCX 魔数校验**：上传模板校验 ZIP 签名（`PK`），防止任意文件伪装 `.docx`
+- **图片上传端点**：新增 `POST /api/image/upload`（PNG/JPG/WebP/GIF），补齐小程序截图/图表占位符流程
+
+**🐛 真实 bug 修复**
+- **PDF 转换端点必然 404**：`convert_pdf` 原只查 `_FILES`（上传文件），生成结果在 `_TASKS`——现已改为用 `task_id` 查 `_TASKS`，生成后可立即转 PDF
+- **下载 MIME/文件名错误**：`download_report` 按任务类型（docx/pdf）返回正确 Content-Type 与文件名，修复 `wx.openDocument` 打不开 PDF 的问题
+- **列映射静默填空**：生成前校验 `source_column` 是否存在于数据列，缺失返回 400 并列出缺失列
+- **空数据文件**：显式传数据文件但无行且含 column 映射时返回 400，不再静默生成空报告
+
+**🧹 代码规范（全仓库 ruff 规范化）**
+- `ruff check --fix` 清理 23 处（冗余 noqa、import 排序）
+- `ruff format` 规范化 75 个文件（docstring 空行、长行折行、去 BOM 等）
+- 手动补充：`config.py` 深拷贝改用 `copy.deepcopy`、`ensure_dirs` 补返回注解、`report_reader` 补 docstring
+
+### Added（API 测试大幅补强）
+- 新增 PDF 转换（生成后转 PDF、MIME 校验）、自动映射、图片上传、空文件/伪 docx、404 族、列缺失、鉴权等 16 项测试
+
+### 兼容性
+
+- 桌面端功能完全不变；**284 项自动化测试通过**（新增 16 项 API 测试）。
+- API 层行为变化：`POST /api/report/pdf` 请求体由 `docx_file_id` 改为 `task_id`（配合 bug 修复）。
+
 ## [2.7.0] - 2026-10-25
 
 ### Added（阶段2：FastAPI 后端 API 层——为微信小程序/App 铺路）

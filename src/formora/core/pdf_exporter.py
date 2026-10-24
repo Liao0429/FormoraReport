@@ -6,6 +6,7 @@
 LibreOffice 单用户 profile 有锁，并发无头转换会互相失败，
 因此用进程级文件锁串行化 LibreOffice 转换。
 """
+
 from __future__ import annotations
 
 import os
@@ -44,6 +45,7 @@ def find_libreoffice() -> Path | None:
 
 def has_word_com() -> bool:
     import importlib.util
+
     return importlib.util.find_spec("win32com") is not None
 
 
@@ -71,14 +73,21 @@ def _export_with_libreoffice(soffice: Path, docx_path: Path, output: Path) -> Pa
     output.parent.mkdir(parents=True, exist_ok=True)
     # 转换到输出目录（LibreOffice 会按原名生成 pdf）
     cmd = [
-        str(soffice), "--headless", "--convert-to", "pdf",
-        "--outdir", str(output.parent), str(docx_path),
+        str(soffice),
+        "--headless",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        str(output.parent),
+        str(docx_path),
     ]
     try:
         with _lo_lock:
             subprocess.run(cmd, check=True, capture_output=True, timeout=120)
     except subprocess.CalledProcessError as e:
-        raise ExternalDependencyError(f"LibreOffice 转换失败: {e.stderr.decode('utf-8', 'replace')}")
+        raise ExternalDependencyError(
+            f"LibreOffice 转换失败: {e.stderr.decode('utf-8', 'replace')}"
+        )
     except subprocess.TimeoutExpired:
         raise ExternalDependencyError("LibreOffice 转换超时。")
 
@@ -87,11 +96,14 @@ def _export_with_libreoffice(soffice: Path, docx_path: Path, output: Path) -> Pa
         if predicted != output:
             shutil.move(str(predicted), str(output))
         return output
-    raise ExternalDependencyError(f"LibreOffice 转换后未找到输出 PDF（预期 {predicted}）。")
+    raise ExternalDependencyError(
+        f"LibreOffice 转换后未找到输出 PDF（预期 {predicted}）。"
+    )
 
 
 def _export_with_word(docx_path: Path, output: Path) -> Path:
     import win32com.client
+
     word = win32com.client.Dispatch("Word.Application")
     word.Visible = False
     try:

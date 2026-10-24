@@ -1,4 +1,5 @@
 """AppState 测试：新建任务时状态复位。"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -3,6 +3,7 @@
 把原本集中在 mapping_page 里的生成逻辑抽离到这里，页面只负责 UI 交互与状态同步。
 所有函数为纯逻辑（不含 Qt 依赖），便于单元测试与复用。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,17 +13,58 @@ from formora.core.errors import FormoraError
 from formora.services.history import record_task
 
 # 图片字段关键字：字段名含这些完整词时按图片处理（避免「地图/图纸/图标/图形」等文本字段误判）
-_IMAGE_KEYWORDS = ("截图", "图表", "数据图", "结果图", "图片", "插图", "实验图",
-                   "chart", "image", "photo", "screenshot")
+_IMAGE_KEYWORDS = (
+    "截图",
+    "图表",
+    "数据图",
+    "结果图",
+    "图片",
+    "插图",
+    "实验图",
+    "chart",
+    "image",
+    "photo",
+    "screenshot",
+)
 
 # 图表占位符别名：自动图表生成后绑定到这些字段（含「图」且语义为数据图表的字段）
-_CHART_KEYWORDS = ("图表", "数据图", "结果图", "曲线图", "柱状图", "折线图",
-                  "chart", "graph", "plot")
+_CHART_KEYWORDS = (
+    "图表",
+    "数据图",
+    "结果图",
+    "曲线图",
+    "柱状图",
+    "折线图",
+    "chart",
+    "graph",
+    "plot",
+)
 
 # 误判排除词：字段名包含这些词时，即使含「图」也不当作图片/图表
-_NON_IMAGE_EXCLUDE = ("地图", "图纸", "图标", "图形", "图案", "图例", "图书",
-                      "图1", "图2", "图3", "图4", "图5", "图6", "图7",
-                      "图8", "图9", "图0", "图a", "图b", "图c", "图一", "图二")
+_NON_IMAGE_EXCLUDE = (
+    "地图",
+    "图纸",
+    "图标",
+    "图形",
+    "图案",
+    "图例",
+    "图书",
+    "图1",
+    "图2",
+    "图3",
+    "图4",
+    "图5",
+    "图6",
+    "图7",
+    "图8",
+    "图9",
+    "图0",
+    "图a",
+    "图b",
+    "图c",
+    "图一",
+    "图二",
+)
 
 
 def is_image_field(name: str) -> bool:
@@ -68,13 +110,16 @@ def resolve_context(state, row: dict | None = None) -> dict:
     if state.data and state.data.is_tabular:
         # 传入 row 时（生成当前行/批量），data_rows 只含当前行，与批量语义一致；
         # 未传 row 时（如仅校验/预览），注入全表供模板循环展示
-        ctx["data_rows"] = [_format_rows([row])[0]] if row is not None else _format_rows(state.data.rows)
+        ctx["data_rows"] = (
+            [_format_rows([row])[0]]
+            if row is not None
+            else _format_rows(state.data.rows)
+        )
     return ctx
 
 
 def _chart_placeholders(mappings) -> list[str]:
-    return [m.template_field for m in mappings
-            if is_chart_field(m.template_field)]
+    return [m.template_field for m in mappings if is_chart_field(m.template_field)]
 
 
 def auto_chart(state) -> str | None:
@@ -129,13 +174,15 @@ def auto_chart(state) -> str | None:
     out_dir = _output_dir(state)
     img = out_dir / f"{sanitize_filename(state.task.name)}_图表.png"
     try:
-        chart.generate_line_chart(xs, ys, img, title=f"{y_col} 数据图",
-                                 x_label=x_col or "序号", y_label=y_col)
+        chart.generate_line_chart(
+            xs, ys, img, title=f"{y_col} 数据图", x_label=x_col or "序号", y_label=y_col
+        )
         return str(img)
     except Exception as e:
         # 记录失败原因，避免用户以为图表已插入（H6）
         try:
             import logging
+
             logging.getLogger("formora").warning("自动图表生成失败: %s", e)
             if hasattr(state, "task") and state.task is not None:
                 state.task.log("warning", "bug", f"自动图表生成失败: {e}")
@@ -184,6 +231,7 @@ def _output_dir(state) -> Path:
     if not out_dir.is_absolute() and out_dir == Path("."):
         # 配置为空串时 Path("") == WindowsPath('.')，回退到默认 Documents 目录
         from formora.services.config import OUTPUT_DEFAULT_DIR
+
         out_dir = OUTPUT_DEFAULT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     return out_dir
@@ -195,12 +243,14 @@ def _format_rows(rows: list[dict]) -> list[dict]:
     避免表格循环块中 None 被 jinja 渲染成字面量 "None"，并改善数字美观度。
     """
     from formora.core.mapper import _format_value
+
     return [{k: _format_value(v) for k, v in row.items()} for row in rows]
 
 
 def _timestamp() -> str:
     """返回紧凑时间戳，用于输出文件版本化，避免重复生成覆盖旧报告。"""
     from datetime import datetime
+
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
@@ -209,7 +259,9 @@ _INVALID_FILENAME_CHARS = set('<>:"/\\|?*')
 
 def sanitize_filename(name: str, fallback: str = "未命名") -> str:
     """过滤 Windows 文件名非法字符，避免任务名含 :?*<>| 等导致 OSError。"""
-    cleaned = "".join(ch for ch in (name or "").strip() if ch not in _INVALID_FILENAME_CHARS)
+    cleaned = "".join(
+        ch for ch in (name or "").strip() if ch not in _INVALID_FILENAME_CHARS
+    )
     cleaned = cleaned.strip(" .")
     return cleaned or fallback
 
@@ -236,7 +288,9 @@ def _auto_chart_enabled(state, explicit: bool | None = None) -> bool:
     return bool(state.config.get("auto_chart", True))
 
 
-def generate_single(state, row: dict | None = None, auto_chart: bool | None = None) -> Path:
+def generate_single(
+    state, row: dict | None = None, auto_chart: bool | None = None
+) -> Path:
     """生成当前行的单份报告，更新任务状态并写入历史。返回输出路径。"""
     if not state.template:
         raise FormoraError("请先解析模板。")
@@ -245,8 +299,12 @@ def generate_single(state, row: dict | None = None, auto_chart: bool | None = No
     _drop_uncovered_image_fields(context, state.mappings, image_vars)
     output = _versioned_output(state, suffix="输出")
     out_path = generator.generate_report(
-        state.template.path, context, output,
-        image_vars=image_vars, template_info=state.template)
+        state.template.path,
+        context,
+        output,
+        image_vars=image_vars,
+        template_info=state.template,
+    )
     state.output_path = str(out_path)
     state.task.status = "done"
     state.task.output_path = out_path
@@ -255,7 +313,9 @@ def generate_single(state, row: dict | None = None, auto_chart: bool | None = No
     return out_path
 
 
-def generate_batch(state, auto_chart: bool | None = None) -> tuple[list[str], list[str]]:
+def generate_batch(
+    state, auto_chart: bool | None = None
+) -> tuple[list[str], list[str]]:
     """按数据行批量生成报告。返回 (成功输出列表, 失败信息列表)。"""
     if not state.template:
         raise FormoraError("请先解析模板。")
@@ -281,14 +341,20 @@ def generate_batch(state, auto_chart: bool | None = None) -> tuple[list[str], li
         out = batch_dir / f"{sanitize_filename(state.task.name)}_第{i + 1}行.docx"
         try:
             _drop_uncovered_image_fields(ctx, state.mappings, image_vars)
-            generator.generate_report(state.template.path, ctx, out,
-                                      image_vars=image_vars, template_info=state.template)
+            generator.generate_report(
+                state.template.path,
+                ctx,
+                out,
+                image_vars=image_vars,
+                template_info=state.template,
+            )
             results.append(str(out))
         except FormoraError as e:
             errors.append(f"第{i + 1}行失败: {e}")
 
-    state.task.log("success", "system",
-                   f"批量生成 {len(results)} 份，失败 {len(errors)} 份")
+    state.task.log(
+        "success", "system", f"批量生成 {len(results)} 份，失败 {len(errors)} 份"
+    )
     record_task(state.task)
     # 记录最新批次目录，供 UI 展示
     state.last_batch_dir = str(batch_dir)
@@ -301,8 +367,9 @@ def batch_export_pdf(docx_paths: list[str]) -> tuple[int, list[str]]:
     供桌面端「批量导出 PDF」按钮与后端 API 复用。
     返回：(成功数, 失败信息列表["文件名: 错误"])
     """
-    from formora.core import pdf_exporter
     import os
+
+    from formora.core import pdf_exporter
 
     ok = 0
     failed: list[str] = []

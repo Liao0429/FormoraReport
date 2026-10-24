@@ -3,6 +3,7 @@
 记录每次生成任务：模板、数据源、映射、输出路径、状态、日志。
 用户数据仅存本地，不入仓库。
 """
+
 from __future__ import annotations
 
 import json
@@ -39,7 +40,11 @@ def record_task(task: ReportTask):
         ],
         # AI 来源追踪：仅记录含依据或需确认的字段，便于事后核对
         "ai_sources": [
-            {"field": m.template_field, "source": m.source, "needs_confirmation": m.needs_confirmation}
+            {
+                "field": m.template_field,
+                "source": m.source,
+                "needs_confirmation": m.needs_confirmation,
+            }
             for m in task.mappings
             if m.source or m.needs_confirmation
         ],

@@ -1,4 +1,5 @@
 """异常体系补充测试：层级关系与消息传递。"""
+
 from __future__ import annotations
 
 from formora.core.errors import (

@@ -4,6 +4,7 @@
 - 图片插入：通过 InlineImage 包装图片路径，替换到 {{ 变量 }} 处。
 - 表格循环：模板中已有 {% for row in rows %}...{% endfor %} 语法，由 docxtpl 处理。
 """
+
 from __future__ import annotations
 
 from pathlib import Path

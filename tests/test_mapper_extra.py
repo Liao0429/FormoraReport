@@ -1,4 +1,5 @@
 """字段映射补充测试：归一化、别名、无数据/无占位符边界。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -48,21 +49,33 @@ class TestAutoMapEdge:
 
 class TestResolveValuesEdge:
     def test_text_source(self):
-        mappings = [FieldMapping(template_field="结论", source_type="text", value="文本值")]
+        mappings = [
+            FieldMapping(template_field="结论", source_type="text", value="文本值")
+        ]
         ctx = mapper.resolve_values(mappings)
         assert ctx["结论"] == "文本值"
 
     def test_chart_source(self):
-        mappings = [FieldMapping(template_field="图", source_type="chart", value="a.png")]
+        mappings = [
+            FieldMapping(template_field="图", source_type="chart", value="a.png")
+        ]
         ctx = mapper.resolve_values(mappings)
         assert ctx["图"] == "a.png"
 
     def test_row_none_columns_empty(self):
-        mappings = [FieldMapping(template_field="姓名", source_type="column", source_column="姓名")]
+        mappings = [
+            FieldMapping(
+                template_field="姓名", source_type="column", source_column="姓名"
+            )
+        ]
         ctx = mapper.resolve_values(mappings, row=None)
         assert ctx["姓名"] == ""
 
     def test_constant_empty_becomes_empty_string(self):
-        mappings = [FieldMapping(template_field="备注", source_type="constant", constant_value=None)]
+        mappings = [
+            FieldMapping(
+                template_field="备注", source_type="constant", constant_value=None
+            )
+        ]
         ctx = mapper.resolve_values(mappings)
         assert ctx["备注"] == ""

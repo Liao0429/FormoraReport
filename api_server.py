@@ -4,6 +4,7 @@
     python api_server.py            # 默认 127.0.0.1:8000
     python api_server.py --port 9000
 """
+
 import argparse
 import os
 import sys
@@ -11,7 +12,7 @@ import sys
 # 确保能 import formora（源码运行时）
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
 
-import uvicorn  # noqa: E402
+import uvicorn
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FormoraReport API 服务")

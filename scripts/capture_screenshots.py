@@ -6,6 +6,7 @@
 用法：python scripts/capture_screenshots.py
 输出：docs/screenshots/<theme>_<page>.png
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,9 +19,9 @@ from PySide6.QtWidgets import QApplication
 
 from formora.services.config import Config, ensure_dirs
 from formora.services.logging_setup import setup_logging
+from formora.ui.animations import set_reduce_motion
 from formora.ui.app_state import AppState
 from formora.ui.main_window import MainWindow
-from formora.ui.animations import set_reduce_motion
 from formora.ui.theme import apply_theme
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "screenshots"
@@ -41,6 +42,7 @@ _CONSTANTS = {
 def prepare_state(state):
     """解析样例模板 + 数据 + 自动映射，填充示例常量。"""
     from formora.core import data_reader, mapper, template_parser
+
     tpl = SAMPLES / "实验报告模板.docx"
     data = SAMPLES / "实验数据.csv"
     if not tpl.exists() or not data.exists():
@@ -55,7 +57,9 @@ def prepare_state(state):
             m.constant_value = _CONSTANTS[m.template_field]
         if m.source_type == "column" and m.template_field in ("姓名", "学号"):
             m.source_type = "constant"
-            m.constant_value = {"姓名": "张三", "学号": "20230001"}.get(m.template_field, "")
+            m.constant_value = {"姓名": "张三", "学号": "20230001"}.get(
+                m.template_field, ""
+            )
     state.task.name = "示例实验报告"
 
 
@@ -72,7 +76,11 @@ def capture(window, name: str):
     for _ in range(5):
         app.processEvents()
 
-    theme = window.state.config.get("theme", "light") if hasattr(window, "state") else "light"
+    theme = (
+        window.state.config.get("theme", "light")
+        if hasattr(window, "state")
+        else "light"
+    )
     size = window.size()
     pix = QPixmap(size)
 

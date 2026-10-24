@@ -1,4 +1,5 @@
-﻿"""日志基础设施补充测试：文件创建、单例、错误分类边界。"""
+"""日志基础设施补充测试：文件创建、单例、错误分类边界。"""
+
 from __future__ import annotations
 
 from formora.core.errors import BugError, FormoraError
@@ -41,4 +42,5 @@ class TestCategoryOfExtra:
 
         class RealUserError(UserError):
             pass
+
         assert category_of(RealUserError("x")) == "user"

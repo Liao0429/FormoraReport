@@ -1,4 +1,5 @@
 """配置管理补充测试：默认值深拷贝、原子写、DPAPI 平台限制。"""
+
 from __future__ import annotations
 
 import pytest

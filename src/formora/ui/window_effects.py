@@ -4,6 +4,7 @@
 所有调用均 try/except 包裹，失败时静默降级为纯 QSS 渐变背景，
 保证在 Windows 10 / 无 DWM 支持 / offscreen 测试环境下也能正常运行。
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -18,9 +19,9 @@ DWMWA_SYSTEMBACKDROP_TYPE = 38
 # SystemBackdropType
 BACKDROP_AUTO = 0
 BACKDROP_NONE = 1
-BACKDROP_MAIN_WINDOW = 2      # Mica
-BACKDROP_TRANSIENT_WINDOW = 3 # Acrylic
-BACKDROP_TABBED_WINDOW = 4    # MicaTabbed
+BACKDROP_MAIN_WINDOW = 2  # Mica
+BACKDROP_TRANSIENT_WINDOW = 3  # Acrylic
+BACKDROP_TABBED_WINDOW = 4  # MicaTabbed
 
 # DWMWINDOWCORNERPREFERENCE
 DWMWCP_DEFAULT = 0
@@ -44,7 +45,8 @@ def _set_window_attribute(hwnd: int, attr: int, value: int) -> bool:
     try:
         v = ctypes.c_int(value)
         result = _dwmapi.DwmSetWindowAttribute(
-            ctypes.wintypes.HWND(hwnd), attr, ctypes.byref(v), ctypes.sizeof(v))
+            ctypes.wintypes.HWND(hwnd), attr, ctypes.byref(v), ctypes.sizeof(v)
+        )
         return result == 0
     except Exception:
         return False
@@ -105,11 +107,13 @@ class WindowMover:
 
     def _on_press(self, event):
         from PySide6.QtCore import Qt
+
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_pos = event.globalPosition().toPoint()
 
     def _on_move(self, event):
         from PySide6.QtCore import Qt
+
         if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
             delta = event.globalPosition().toPoint() - self._drag_pos
             self._window.move(self._window.pos() + delta)

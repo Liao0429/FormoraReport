@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """UI 冒烟测试（offscreen）：用真实样例跑通 首页→导入→映射→生成→预览 全流程。"""
+
 import os
 import sys
 from pathlib import Path
@@ -40,6 +41,7 @@ print("首页 OK")
 
 # 模拟导入：先建任务，再填充模板与数据（与导入页实际逻辑一致）
 from formora.core import data_reader, template_parser
+
 info = template_parser.parse_template(TEMPLATE)
 ds = data_reader.read_data(DATA)
 state.new_task(name="UI冒烟测试")
@@ -95,13 +97,15 @@ assert "冒烟测试实验" in preview_text
 mp = win.pages["mapping"]
 img_vars = mp._image_vars()
 print("图片变量:", img_vars)
-assert any(m.source_type == "image" or m.template_field in img_vars
-           for m in state.mappings), "应有图片字段"
+assert any(
+    m.source_type == "image" or m.template_field in img_vars for m in state.mappings
+), "应有图片字段"
 
 # 批量生成全部数据行
 mp._generate_batch()
 # 批量生成已异步化：轮询等待后台线程完成（最多 30 秒）
 import time
+
 deadline = time.time() + 30
 while time.time() < deadline and not getattr(state, "last_batch_dir", None):
     app.processEvents()
@@ -109,7 +113,9 @@ while time.time() < deadline and not getattr(state, "last_batch_dir", None):
 batch_dir = getattr(state, "last_batch_dir", None)
 batch_files = sorted(Path(batch_dir).glob("*.docx")) if batch_dir else []
 print("批量生成文件数:", len(batch_files), "目录:", batch_dir)
-assert len(batch_files) == len(ds.rows), f"批量数量不符: {len(batch_files)} != {len(ds.rows)}"
+assert len(batch_files) == len(ds.rows), (
+    f"批量数量不符: {len(batch_files)} != {len(ds.rows)}"
+)
 assert all(f.exists() for f in batch_files)
 
 # 深色主题

@@ -1,10 +1,18 @@
 """结果预览页：读取生成的 DOCX 文本并展示；支持导出 PDF。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, primary_button, secondary_button
@@ -86,21 +94,26 @@ class PreviewPage(QWidget):
         cfg = self.state.config
         if not client.is_configured(cfg):
             QMessageBox.information(
-                self, "AI 模式未启用",
-                "AI 审查需要在「设置 → AI 智能模式」中配置 API 地址、模型与密钥。")
+                self,
+                "AI 模式未启用",
+                "AI 审查需要在「设置 → AI 智能模式」中配置 API 地址、模型与密钥。",
+            )
             return
         # 隐私确认：AI 审查会把整份报告文本发送到所配置的 API
         if not cfg.get("privacy", {}).get("review_warning_shown"):
             ret = QMessageBox.question(
-                self, "隐私提示",
+                self,
+                "隐私提示",
                 "AI 审查会把当前报告的完整文本（含已填入的数据）发送到"
-                "你配置的模型 API。\n请确认你信任该 API 服务商。是否继续？")
+                "你配置的模型 API。\n请确认你信任该 API 服务商。是否继续？",
+            )
             if ret != QMessageBox.StandardButton.Yes:
                 return
             cfg.set("privacy", {**cfg.get("privacy", {}), "review_warning_shown": True})
             cfg.save()
         try:
             from formora.services.report_reader import extract_report_text
+
             report_text = extract_report_text(self.state.output_path)
         except Exception as e:
             QMessageBox.warning(self, "读取报告失败", str(e))
@@ -121,7 +134,9 @@ class PreviewPage(QWidget):
         self._set_review_busy(False)
         self.refresh()  # 恢复原始报告预览
         if not issues:
-            self.text_edit.append("\n【AI 审查】未发现问题。（AI 判断仅供参考，请人工复核）")
+            self.text_edit.append(
+                "\n【AI 审查】未发现问题。（AI 判断仅供参考，请人工复核）"
+            )
             return
         lines = ["\n【AI 审查】发现以下问题："]
         for iss in issues:
@@ -142,6 +157,7 @@ class PreviewPage(QWidget):
             return
         try:
             from formora.services.report_reader import extract_report_text
+
             base = extract_report_text(self.state.output_path)
             if self._ai_sources_text():
                 base += "\n" + self._ai_sources_text()
@@ -154,6 +170,7 @@ class PreviewPage(QWidget):
             QMessageBox.warning(self, "提示", "还没有输出文件。")
             return
         from formora.core import pdf_exporter
+
         try:
             out = self.state.output_path.replace(".docx", ".pdf")
             pdf_exporter.export_pdf(self.state.output_path, out)

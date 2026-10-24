@@ -6,6 +6,7 @@
 - ExternalDependencyError -> category=dependency
 - 其他 -> category=bug
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,7 +23,9 @@ from formora.services.config import LOG_DIR
 _LOGGER: logging.Logger | None = None
 
 
-def setup_logging(log_dir: Path | None = None, level: int = logging.INFO) -> logging.Logger:
+def setup_logging(
+    log_dir: Path | None = None, level: int = logging.INFO
+) -> logging.Logger:
     global _LOGGER
     if _LOGGER is not None:
         return _LOGGER
@@ -35,7 +38,8 @@ def setup_logging(log_dir: Path | None = None, level: int = logging.INFO) -> log
 
     # 滚动文件（保留 5 个 2MB 文件）
     fh = logging.handlers.RotatingFileHandler(
-        log_dir / "formora.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8")
+        log_dir / "formora.log", maxBytes=2_000_000, backupCount=5, encoding="utf-8"
+    )
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 

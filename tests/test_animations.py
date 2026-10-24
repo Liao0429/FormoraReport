@@ -1,4 +1,5 @@
 """轻量动画工具测试：减少动态效果开关下的降级行为。"""
+
 from __future__ import annotations
 
 import pytest

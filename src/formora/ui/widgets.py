@@ -1,4 +1,5 @@
 """可复用 UI 组件：卡片、按钮、标题、文件选择行。"""
+
 from __future__ import annotations
 
 from PySide6.QtCore import Qt

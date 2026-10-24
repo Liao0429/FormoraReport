@@ -1,4 +1,5 @@
 """首页：新建任务 + 最近任务。"""
+
 from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidget, QVBoxLayout, QWidget
@@ -34,7 +35,9 @@ class HomePage(QWidget):
         template_btn = secondary_button("导入模板")
         template_btn.clicked.connect(lambda: self.navigate("import"))
         demo_btn = secondary_button("🎓 使用示例模板体验")
-        demo_btn.setToolTip("自动生成一份示例实验报告模板和数据，载入后即可体验完整流程")
+        demo_btn.setToolTip(
+            "自动生成一份示例实验报告模板和数据，载入后即可体验完整流程"
+        )
         demo_btn.clicked.connect(self._load_demo)
         row.addWidget(new_btn)
         row.addWidget(template_btn)
@@ -71,10 +74,12 @@ class HomePage(QWidget):
         - 源码运行：从 tests/samples 读取，缺失时现场生成。
         """
         from pathlib import Path
+
         from PySide6.QtWidgets import QMessageBox
 
         try:
             import sys
+
             from formora.core import data_reader, template_parser
 
             tpl: Path
@@ -95,6 +100,7 @@ class HomePage(QWidget):
                 if not tpl.exists() or not data.exists():
                     sys.path.insert(0, str(root / "scripts"))
                     from make_samples import make_csv, make_template
+
                     if not tpl.exists():
                         make_template(tpl)
                     if not data.exists():

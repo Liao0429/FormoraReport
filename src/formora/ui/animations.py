@@ -4,6 +4,7 @@
 并尊重系统「减少动态效果」设置（QApplication.styleHints().showShortcutContext() 不适用，
 改用 QGuiApplication.styleHints().setFocusScrollAnimationsEnabled 无关；这里用静态开关）。
 """
+
 from __future__ import annotations
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer
@@ -20,6 +21,7 @@ def set_reduce_motion(enabled: bool):
 def fade_in(widget, duration: int = 200, delay: int = 0):
     """让 widget 淡入（从透明到不透明）。返回动画对象（需保持引用）。"""
     from PySide6.QtWidgets import QGraphicsOpacityEffect
+
     if _REDUCE_MOTION:
         widget.setGraphicsEffect(None)
         return None
@@ -43,6 +45,7 @@ def fade_in(widget, duration: int = 200, delay: int = 0):
 def fade_out_then(widget, duration: int = 150, on_finished=None):
     """淡出 widget，结束后回调（用于页面切换）。"""
     from PySide6.QtWidgets import QGraphicsOpacityEffect
+
     if _REDUCE_MOTION:
         if on_finished:
             on_finished()
@@ -55,7 +58,9 @@ def fade_out_then(widget, duration: int = 150, on_finished=None):
     anim.setStartValue(1.0)
     anim.setEndValue(0.0)
     anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-    anim.finished.connect(lambda: (widget.setGraphicsEffect(None), on_finished() if on_finished else None))
+    anim.finished.connect(
+        lambda: (widget.setGraphicsEffect(None), on_finished() if on_finished else None)
+    )
     anim.start()
     return anim
 
@@ -66,6 +71,7 @@ def page_transition(stack, new_page, duration: int = 180):
         stack.setCurrentWidget(new_page)
         return None
     from PySide6.QtWidgets import QGraphicsOpacityEffect
+
     effect = QGraphicsOpacityEffect(new_page)
     new_page.setGraphicsEffect(effect)
     effect.setOpacity(0.0)

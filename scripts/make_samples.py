@@ -3,6 +3,7 @@
 
 用于 MVP 验证和自动化测试。生成到 tests/samples/。
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,7 +45,9 @@ def make_template(path: Path):
     _h(doc, "四、实验步骤")
     doc.add_paragraph("{{实验步骤}}")
     _h(doc, "五、实验数据")
-    doc.add_paragraph("{% for row in data_rows %}{{ row['项目'] }}：{{ row['数值'] }}；{% endfor %}")
+    doc.add_paragraph(
+        "{% for row in data_rows %}{{ row['项目'] }}：{{ row['数值'] }}；{% endfor %}"
+    )
     _h(doc, "六、实验结果图表")
     doc.add_paragraph("{{ chart }}")
     _h(doc, "七、实验结果")
@@ -66,6 +69,7 @@ def _h(doc, text):
 
 def make_csv(path: Path):
     import csv
+
     rows = [
         ["项目", "数值"],
         ["样本A", 12.5],

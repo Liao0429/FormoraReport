@@ -1,4 +1,5 @@
 """PDF 导出器测试：LibreOffice/Word 探测、成功与失败路径（全部离线 mock）。"""
+
 from __future__ import annotations
 
 import subprocess
@@ -19,7 +20,10 @@ class TestFindLibreOffice:
         assert pdf_exporter.find_libreoffice() is None
 
     def test_found_via_which(self, monkeypatch):
-        monkeypatch.setattr("shutil.which", lambda name: "C:/fake/soffice.exe" if name == "soffice" else None)
+        monkeypatch.setattr(
+            "shutil.which",
+            lambda name: "C:/fake/soffice.exe" if name == "soffice" else None,
+        )
         result = pdf_exporter.find_libreoffice()
         assert result == Path("C:/fake/soffice.exe")
 
@@ -64,8 +68,9 @@ class TestExportPdf:
     def test_libreoffice_success(self, tmp_path, monkeypatch):
         docx = tmp_path / "报告.docx"
         docx.write_bytes(b"fake-docx")
-        monkeypatch.setattr(pdf_exporter, "find_libreoffice",
-                            lambda: Path("C:/fake/soffice.exe"))
+        monkeypatch.setattr(
+            pdf_exporter, "find_libreoffice", lambda: Path("C:/fake/soffice.exe")
+        )
 
         def fake_run(cmd, check=True, capture_output=True, timeout=120):
             outdir = Path(cmd[cmd.index("--outdir") + 1])
@@ -80,21 +85,28 @@ class TestExportPdf:
     def test_libreoffice_timeout(self, tmp_path, monkeypatch):
         docx = tmp_path / "报告.docx"
         docx.write_bytes(b"fake-docx")
-        monkeypatch.setattr(pdf_exporter, "find_libreoffice",
-                            lambda: Path("C:/fake/soffice.exe"))
-        monkeypatch.setattr("subprocess.run",
-                            lambda *a, **k: (_ for _ in ()).throw(subprocess.TimeoutExpired("cmd", 120)))
+        monkeypatch.setattr(
+            pdf_exporter, "find_libreoffice", lambda: Path("C:/fake/soffice.exe")
+        )
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **k: (_ for _ in ()).throw(
+                subprocess.TimeoutExpired("cmd", 120)
+            ),
+        )
         with pytest.raises(ExternalDependencyError):
             pdf_exporter.export_pdf(docx, tmp_path / "out.pdf")
 
     def test_libreoffice_called_process_error(self, tmp_path, monkeypatch):
         docx = tmp_path / "报告.docx"
         docx.write_bytes(b"fake-docx")
-        monkeypatch.setattr(pdf_exporter, "find_libreoffice",
-                            lambda: Path("C:/fake/soffice.exe"))
+        monkeypatch.setattr(
+            pdf_exporter, "find_libreoffice", lambda: Path("C:/fake/soffice.exe")
+        )
         err = subprocess.CalledProcessError(1, "cmd", stderr=b"boom")
-        monkeypatch.setattr("subprocess.run",
-                            lambda *a, **k: (_ for _ in ()).throw(err))
+        monkeypatch.setattr(
+            "subprocess.run", lambda *a, **k: (_ for _ in ()).throw(err)
+        )
         with pytest.raises(ExternalDependencyError):
             pdf_exporter.export_pdf(docx, tmp_path / "out.pdf")
 

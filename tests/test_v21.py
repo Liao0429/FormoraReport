@@ -1,4 +1,5 @@
 """2.1 新增逻辑测试：图片字段校验、版本化输出、自动图表开关。"""
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,16 +23,20 @@ class TestImageValidation:
         assert any(i.severity == "error" and "未选择图片" in i.message for i in issues)
 
     def test_nonexistent_image_is_error(self):
-        mappings = [FieldMapping(
-            template_field="截图", source_type="image",
-            value="C:/不存在/xx.png")]
+        mappings = [
+            FieldMapping(
+                template_field="截图", source_type="image", value="C:/不存在/xx.png"
+            )
+        ]
         issues = validator.validate_mappings(mappings)
         assert any(i.severity == "error" and "不存在" in i.message for i in issues)
 
     def test_existing_image_no_error(self, tmp_path):
         img = tmp_path / "a.png"
         img.write_bytes(b"fake-png")
-        mappings = [FieldMapping(template_field="截图", source_type="image", value=str(img))]
+        mappings = [
+            FieldMapping(template_field="截图", source_type="image", value=str(img))
+        ]
         issues = validator.validate_mappings(mappings)
         assert not any(i.field == "截图" for i in issues)
 
@@ -43,14 +48,22 @@ class TestVersionedOutput:
         template = template_parser.parse_template(TEMPLATE)
         data = data_reader.read_data(DATA)
         mappings = mapper.auto_map(template, data)
-        constants = {"实验名称": "x", "实验目的": "y", "实验环境": "z",
-                     "实验步骤": "s", "实验结果": "r", "问题分析": "p", "实验结论": "c"}
+        constants = {
+            "实验名称": "x",
+            "实验目的": "y",
+            "实验环境": "z",
+            "实验步骤": "s",
+            "实验结果": "r",
+            "问题分析": "p",
+            "实验结论": "c",
+        }
         for m in mappings:
             if m.source_type == "constant" and m.template_field in constants:
                 m.constant_value = constants[m.template_field]
         task = ReportTask(name="版本化", template_path=TEMPLATE)
-        state = SimpleNamespace(config=cfg, template=template, data=data,
-                                mappings=mappings, task=task)
+        state = SimpleNamespace(
+            config=cfg, template=template, data=data, mappings=mappings, task=task
+        )
         out = report_service.generate_single(state)
         assert out.exists()
         # 文件名应含时间戳
@@ -63,8 +76,9 @@ class TestVersionedOutput:
         data = data_reader.read_data(DATA)
         mappings = mapper.auto_map(template, data)
         task = ReportTask(name="批量版本化", template_path=TEMPLATE)
-        state = SimpleNamespace(config=cfg, template=template, data=data,
-                                mappings=mappings, task=task)
+        state = SimpleNamespace(
+            config=cfg, template=template, data=data, mappings=mappings, task=task
+        )
         results, errors = report_service.generate_batch(state, auto_chart=True)
         assert len(results) == len(data.rows)
         assert errors == []
@@ -82,8 +96,9 @@ class TestAutoChartFlag:
         data = data_reader.read_data(DATA)
         mappings = mapper.auto_map(template, data)
         task = ReportTask(name="无图表", template_path=TEMPLATE)
-        state = SimpleNamespace(config=cfg, template=template, data=data,
-                                mappings=mappings, task=task)
+        state = SimpleNamespace(
+            config=cfg, template=template, data=data, mappings=mappings, task=task
+        )
         image_vars = report_service.collect_image_vars(state, auto_chart_enabled=False)
         assert not any("图表" in v or "chart" in k for k, v in image_vars.items())
 
@@ -94,7 +109,8 @@ class TestAutoChartFlag:
         data = data_reader.read_data(DATA)
         mappings = mapper.auto_map(template, data)
         task = ReportTask(name="有图表", template_path=TEMPLATE)
-        state = SimpleNamespace(config=cfg, template=template, data=data,
-                                mappings=mappings, task=task)
+        state = SimpleNamespace(
+            config=cfg, template=template, data=data, mappings=mappings, task=task
+        )
         image_vars = report_service.collect_image_vars(state, auto_chart_enabled=True)
         assert image_vars  # 应有图表图片

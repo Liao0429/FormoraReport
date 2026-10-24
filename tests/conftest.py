@@ -6,6 +6,7 @@
 - 提供共享样例文件夹具：模板/数据路径，缺失时自动生成。
 - 提供隔离的 Config 工厂与完整任务状态构造助手，避免各测试文件重复样板代码。
 """
+
 from __future__ import annotations
 
 import sys
@@ -31,6 +32,7 @@ def ensure_samples():
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
     from make_samples import make_csv, make_template
+
     SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     if not TEMPLATE.exists():
         make_template(TEMPLATE)
@@ -104,7 +106,11 @@ def make_task_state(tmp_path, template_path, data_path):
                     m.constant_value = constants[m.template_field]
         task = ReportTask(name=name, template_path=template_path)
         return SimpleNamespace(
-            config=cfg, template=template, data=data, mappings=mappings, task=task,
+            config=cfg,
+            template=template,
+            data=data,
+            mappings=mappings,
+            task=task,
         )
 
     return _make
@@ -114,7 +120,9 @@ def make_task_state(tmp_path, template_path, data_path):
 def qapp():
     """创建（或复用）一个 offscreen 的 QApplication，供 UI 辅助模块测试使用。"""
     import os
+
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance() or QApplication([])
     return app

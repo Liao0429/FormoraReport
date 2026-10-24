@@ -1,4 +1,5 @@
 """核心数据模型单元测试（无 IO、无依赖，可离线快速运行）。"""
+
 import sys
 from pathlib import Path
 
@@ -35,7 +36,9 @@ class TestTemplateInfo:
 
 class TestTableInfo:
     def test_fields(self):
-        t = TableInfo(index=0, header=["a", "b"], row_count=2, col_count=2, sample=[["a", "b"]])
+        t = TableInfo(
+            index=0, header=["a", "b"], row_count=2, col_count=2, sample=[["a", "b"]]
+        )
         assert t.header == ["a", "b"]
         assert t.row_count == 2
         assert t.col_count == 2
@@ -51,10 +54,14 @@ class TestDataSource:
 
 class TestFieldMapping:
     def test_resolved_value(self):
-        m = FieldMapping(template_field="f", source_type="constant", constant_value="常量值")
+        m = FieldMapping(
+            template_field="f", source_type="constant", constant_value="常量值"
+        )
         assert m.resolved_value() == "常量值"
 
-        m2 = FieldMapping(template_field="f", source_type="column", source_column="c", value="列值")
+        m2 = FieldMapping(
+            template_field="f", source_type="column", source_column="c", value="列值"
+        )
         assert m2.resolved_value() == "列值"
 
     def test_ai_tracking_defaults(self):
