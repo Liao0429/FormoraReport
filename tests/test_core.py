@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from formora.core import chart, data_reader, generator, mapper, template_parser, validator
 from formora.core.errors import DocumentFormatError, UserError
+from formora.core.models import DataSource, FieldMapping
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 # 测试输出写入系统临时目录，避免污染仓库 tests/output 造成杂乱。
@@ -129,7 +130,6 @@ class TestMapper:
     def test_auto_map_column_match(self):
         # 造一个列名与占位符相同的场景
         info = template_parser.parse_template(TEMPLATE)
-        from formora.core.models import DataSource
         ds = DataSource(path=DATA, kind="csv", columns=["姓名", "学号"], rows=[])
         mappings = mapper.auto_map(info, ds)
         by_field = {m.template_field: m for m in mappings}
@@ -139,7 +139,6 @@ class TestMapper:
     def test_auto_map_alias_match(self):
         """占位符「姓名」应匹配数据列「学生姓名」等别名。"""
         info = template_parser.parse_template(TEMPLATE)
-        from formora.core.models import DataSource
         ds = DataSource(path=DATA, kind="csv", columns=["学生姓名", "学号"], rows=[])
         mappings = mapper.auto_map(info, ds)
         by_field = {m.template_field: m for m in mappings}
@@ -148,7 +147,6 @@ class TestMapper:
         assert by_field["学号"].source_column == "学号"
 
     def test_resolve_values(self):
-        from formora.core.models import DataSource, FieldMapping
         mappings = [
             FieldMapping(template_field="姓名", source_type="column", source_column="学生姓名"),
             FieldMapping(template_field="备注", source_type="constant", constant_value="无"),

@@ -71,7 +71,12 @@ class PreviewPage(QWidget):
         try:
             from docx import Document
             doc = Document(self.state.output_path)
-            report_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            parts = [p.text for p in doc.paragraphs if p.text.strip()]
+            for i, table in enumerate(doc.tables):
+                parts.append(f"[表格 {i+1}]")
+                for row in table.rows:
+                    parts.append(" | ".join(c.text.strip() for c in row.cells))
+            report_text = "\n".join(parts)
         except Exception as e:
             QMessageBox.warning(self, "读取报告失败", str(e))
             return

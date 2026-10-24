@@ -154,6 +154,44 @@ class MainWindow(QMainWindow):
             self.showMaximized()
             self.btn_max.setText("❐")
 
+    # ---------- 无边框窗口边缘缩放 ----------
+
+    def nativeEvent(self, event_type, message):
+        """处理 WM_NCHITTEST，支持无边框窗口 8 向边缘缩放。"""
+        import ctypes
+        import ctypes.wintypes
+        try:
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+            if msg.message == 0x0084:  # WM_NCHITTEST
+                x = ctypes.c_short(msg.lParam & 0xFFFF).value
+                y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+                rect = ctypes.wintypes.RECT()
+                ctypes.windll.user32.GetWindowRect(int(self.winId()), ctypes.byref(rect))
+                border = 6
+                left = x < rect.left + border
+                right = x > rect.right - border
+                top = y < rect.top + border
+                bottom = y > rect.bottom - border
+                if top and left:
+                    return (True, 0x000D)  # HTTOPLEFT
+                if top and right:
+                    return (True, 0x000E)  # HTTOPRIGHT
+                if bottom and left:
+                    return (True, 0x0010)  # HTBOTTOMLEFT
+                if bottom and right:
+                    return (True, 0x0011)  # HTBOTTOMRIGHT
+                if left:
+                    return (True, 0x000A)  # HTLEFT
+                if right:
+                    return (True, 0x000B)  # HTRIGHT
+                if top:
+                    return (True, 0x000C)  # HTTOP
+                if bottom:
+                    return (True, 0x000F)  # HTBOTTOM
+        except Exception:
+            pass
+        return super().nativeEvent(event_type, message)
+
     # ---------- 系统玻璃 ----------
 
     def showEvent(self, event):
@@ -196,6 +234,17 @@ def _win_button(text: str, object_name: str) -> QPushButton:
     btn = QPushButton(text)
     btn.setObjectName(object_name)
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    # 无障碍：为读屏提供可朗读名称，并加 tooltip
+    if object_name == "WinButton WinClose":
+        btn.setAccessibleName("关闭")
+        btn.setToolTip("关闭")
+    elif text in ("—", "□", "❐", "✕"):
+        if text == "—":
+            btn.setAccessibleName("最小化")
+            btn.setToolTip("最小化")
+        elif text in ("□", "❐"):
+            btn.setAccessibleName("最大化")
+            btn.setToolTip("最大化")
     return btn
 
 

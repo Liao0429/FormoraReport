@@ -22,6 +22,8 @@ packaging/*.exe
 reports/github_candidates_raw.csv
 reports/github_raw/
 reports/readmes/
+reports/exp_repo.json
+reports/exp_skill/
 
 # 测试/静态分析缓存
 .coverage

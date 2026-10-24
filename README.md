@@ -37,6 +37,8 @@ Automated lab report generator for Windows — import a DOCX report template, ex
 - 👁 **Preview & validation**: catches missing fields before generation; preview, edit, and regenerate after
 - 📤 **Export**: Word (`.docx`) by default; PDF via local LibreOffice or Microsoft Word (with honest fallback messages)
 - 🌗 **Modern UI**: glassmorphism style, light/dark themes, high-DPI support
+- ⚡ **Non-blocking generation**: AI assist and batch generation run in background threads — the UI stays responsive
+- 🛡 **Safety**: versioned outputs (never overwrite), SSRF-protected AI endpoint, image-path validation before generation
 - 🔐 **Privacy-first**: everything stays local by default; AI keys are encrypted with Windows DPAPI, never stored in plaintext
 
 ## Operating Modes

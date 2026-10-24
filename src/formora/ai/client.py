@@ -15,6 +15,81 @@ from formora.services.config import Config
 
 _CHAT_COMPLETIONS_SUFFIX = "/chat/completions"
 
+# 允许的 URL scheme：仅 https；http 仅限本机回环（本地代理 / 测试端点）
+_ALLOWED_SCHEMES = ("https",)
+_ALLOWED_LOOPBACK_SCHEMES = ("https", "http")
+# 不允许连接的内网/保留段前缀（SSRF 防护）
+_BLOCKED_HOST_SUBSTRINGS = (
+    "169.254.", "10.", "192.168.", "172.16.", "172.17.", "172.18.",
+    "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+    "172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
+    "172.29.", "172.30.", "172.31.", "127.", "0.",
+    "100.64.", "100.65.", "100.66.", "100.67.", "100.68.",
+    "100.69.", "100.70.", "100.71.", "100.72.", "100.73.",
+    "100.74.", "100.75.", "100.76.", "100.77.", "100.78.",
+    "100.79.", "100.80.", "100.81.", "100.82.", "100.83.",
+    "100.84.", "100.85.", "100.86.", "100.87.", "100.88.",
+    "100.89.", "100.90.", "100.91.", "100.92.", "100.93.",
+    "100.94.", "100.95.", "100.96.", "100.97.", "100.98.",
+    "100.99.", "100.100.", "100.101.", "100.102.", "100.103.",
+    "100.104.", "100.105.", "100.106.", "100.107.", "100.108.",
+    "100.109.", "100.110.", "100.111.", "100.112.", "100.113.",
+    "100.114.", "100.115.", "100.116.", "100.117.", "100.118.",
+    "100.119.", "100.120.", "100.121.", "100.122.", "100.123.",
+    "100.124.", "100.125.", "100.126.", "100.127.",
+    "metadata.", "169.254.169.254",
+)
+
+
+def _validate_base_url(base_url: str) -> str:
+    """校验并规范化 API base_url，阻止 SSRF / 密钥外发到内网或本地地址。
+
+    规则：
+    - 必须含 scheme 且仅允许 https（http 仅限 localhost / 127.0.0.1 / ::1）。
+    - 拒绝内网/保留 IP 段（169.254.x、10.x、192.168.x、172.16-31.x、100.64+ 等）。
+    - 拒绝裸 IP（除 localhost 回环）。
+    校验失败抛 ExternalDependencyError，不发起网络请求。
+    """
+    from urllib.parse import urlparse
+
+    base_url = (base_url or "").strip().rstrip("/")
+    if not base_url:
+        raise ExternalDependencyError("AI API 地址不能为空。")
+    if "://" not in base_url:
+        raise ExternalDependencyError(
+            f"AI API 地址缺少协议头（如 https://）：{base_url}")
+    try:
+        parsed = urlparse(base_url)
+    except Exception as e:
+        raise ExternalDependencyError(f"AI API 地址无法解析：{e}")
+
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if not scheme or not host:
+        raise ExternalDependencyError(f"AI API 地址不完整：{base_url}")
+
+    is_loopback = host in ("localhost", "127.0.0.1", "::1")
+    if is_loopback:
+        if scheme not in _ALLOWED_LOOPBACK_SCHEMES:
+            raise ExternalDependencyError(
+                f"AI API 地址 scheme 仅允许 {'/'.join(_ALLOWED_LOOPBACK_SCHEMES)}：{base_url}")
+    else:
+        if scheme not in _ALLOWED_SCHEMES:
+            raise ExternalDependencyError(
+                "出于安全考虑，AI API 地址仅允许 https://（本机代理可例外）。"
+                f"当前：{base_url}")
+        # 拒绝内网/保留段
+        if any(b in host for b in _BLOCKED_HOST_SUBSTRINGS):
+            raise ExternalDependencyError(
+                f"AI API 地址指向内网/保留地址，已阻止：{base_url}")
+        # 拒绝裸 IP（除回环）
+        host_is_ip = host.replace(".", "").isdigit() or ":" in host
+        if host_is_ip:
+            raise ExternalDependencyError(
+                f"AI API 地址为裸 IP，已阻止（请使用域名）：{base_url}")
+
+    return base_url
+
 
 def is_configured(config: Config) -> bool:
     ai = config.get("ai", {}) or {}
@@ -31,7 +106,7 @@ def _post_chat(
     timeout: int = 60,
 ) -> dict:
     """向 OpenAI 兼容接口发送 chat/completions，返回解析后的 JSON。"""
-    base_url = base_url.rstrip("/")
+    base_url = _validate_base_url(base_url)
     if base_url.endswith("/v1"):
         url = base_url + _CHAT_COMPLETIONS_SUFFIX
     else:

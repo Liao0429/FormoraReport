@@ -1,12 +1,15 @@
 """字段映射页：自动映射 + 手动编辑（文本/常量/图片）+ 校验 + 生成/批量生成。
 
 生成、图表、AI 素材等纯逻辑已抽到 services/report_service.py，本页只负责 UI 交互。
+
+线程化：AI 请求（网络，60s 超时）与批量生成（可能大量行）都放到后台 QThread，
+避免阻塞 UI 主线程；完成后通过信号回到主线程更新界面。
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -17,7 +20,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -31,12 +33,34 @@ from formora.services.report_service import is_image_field
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 
 
+class _TaskThread(QThread):
+    """后台执行耗时任务，通过信号回传结果/错误，避免阻塞 UI 主线程。"""
+
+    result_ready = Signal(object)
+    error_raised = Signal(str)
+
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self._fn = fn
+        self._args = args
+        self._kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self._fn(*self._args, **self._kwargs)
+            self.result_ready.emit(result)
+        except Exception as e:  # noqa: BLE001 - 统一转成用户可读消息
+            self.error_raised.emit(str(e))
+
+
 class MappingPage(QWidget):
     def __init__(self, state, navigate):
         super().__init__()
         self.state = state
         self.navigate = navigate
         self._val_edits: dict[int, QLineEdit] = {}
+        self._ai_thread: _TaskThread | None = None
+        self._batch_thread: _TaskThread | None = None
         self._build()
 
     def _build(self):
@@ -54,6 +78,9 @@ class MappingPage(QWidget):
         lay.addWidget(hint)
 
         card = Card("字段映射")
+        card.add_widget(hint_label(
+            "切换页面不会丢失已编辑的映射。需要重新按数据列自动匹配时，"
+            "点击「重新自动匹配」。"))
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["模板字段", "来源类型", "来源/数据列", "值（文本/图片路径）"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -75,6 +102,8 @@ class MappingPage(QWidget):
         lay.addWidget(card)
 
         ops = QHBoxLayout()
+        self.remap_btn = secondary_button("重新自动匹配")
+        self.remap_btn.clicked.connect(self._remap)
         self.validate_btn = secondary_button("校验")
         self.validate_btn.clicked.connect(self._validate)
         self.ai_btn = secondary_button("✨ AI 辅助填写")
@@ -83,6 +112,7 @@ class MappingPage(QWidget):
         self.batch_btn.clicked.connect(self._generate_batch)
         self.gen_btn = primary_button("生成当前行报告 →")
         self.gen_btn.clicked.connect(self._generate)
+        ops.addWidget(self.remap_btn)
         ops.addWidget(self.validate_btn)
         ops.addWidget(self.ai_btn)
         ops.addWidget(self.batch_btn)
@@ -100,13 +130,18 @@ class MappingPage(QWidget):
     # ---------- 状态与表格填充 ----------
 
     def refresh(self):
-        """从 state 重建映射表。无模板时非阻塞提示。"""
+        """从 state 重建映射表。无模板时非阻塞提示。
+
+        注意：只在「首次进入且尚无映射」时自动映射；用户已编辑过的映射
+        一律保留，避免切换页面后手动映射/截图/AI 结果被 auto_map 覆盖。
+        """
         state = self.state
         if not state.template:
             self.table.setRowCount(0)
             self.issues_text.setPlainText("⚠️ 请先在「文档导入」页选择并解析实验报告模板。")
             return
-        state.mappings = mapper.auto_map(state.template, state.data)
+        if not state.mappings:
+            state.mappings = mapper.auto_map(state.template, state.data)
 
         self.row_combo.clear()
         if state.data and state.data.is_tabular:
@@ -188,6 +223,14 @@ class MappingPage(QWidget):
         return self._val_edits.get(row)
 
     # ---------- 交互回调 ----------
+
+    def _remap(self):
+        """用户主动触发重新自动匹配（覆盖当前映射）。"""
+        if not self.state.template:
+            return
+        self.state.mappings = mapper.auto_map(self.state.template, self.state.data)
+        self._fill_table()
+        self.issues_text.setPlainText("已按数据列重新自动匹配。")
 
     def _sync_row_combo(self):
         if not self.state.data or not self.state.data.is_tabular:
@@ -271,10 +314,13 @@ class MappingPage(QWidget):
 
     def _validate(self):
         try:
+            self._collect_mappings()
+            mapping_issues = validator.validate_mappings(self.state.mappings)
             context = report_service.resolve_context(self.state, self._current_row())
-            issues = validator.validate_context(
+            ctx_issues = validator.validate_context(
                 context, self.state.template,
                 image_placeholders=self._image_placeholders())
+            issues = mapping_issues + ctx_issues
             lines = [f"[{iss.severity}] {iss.field}: {iss.message}" for iss in issues]
             self.issues_text.setPlainText("\n".join(lines) if lines else "✅ 未发现明显问题。")
         except FormoraError as e:
@@ -285,12 +331,23 @@ class MappingPage(QWidget):
         if not state.template:
             QMessageBox.warning(self, "提示", "请先解析模板。")
             return
+        self._collect_mappings()
         try:
-            out_path = report_service.generate_single(state, row=self._current_row())
+            out_path = report_service.generate_single(
+                state, row=self._current_row(),
+                auto_chart=self.chart_check.isChecked())
             self.issues_text.setPlainText(f"✅ 报告已生成：\n{out_path}")
             self.navigate("generate")
         except FormoraError as e:
             QMessageBox.critical(self, "生成失败", str(e))
+
+    def _set_busy(self, busy: bool):
+        """批量/AI 任务执行期间禁用操作按钮，避免重复触发。"""
+        for b in (getattr(self, "gen_btn", None), getattr(self, "batch_btn", None),
+                  getattr(self, "ai_btn", None), getattr(self, "validate_btn", None),
+                  getattr(self, "remap_btn", None)):
+            if b is not None:
+                b.setEnabled(not busy)
 
     def _generate_batch(self):
         state = self.state
@@ -301,12 +358,21 @@ class MappingPage(QWidget):
             QMessageBox.warning(self, "提示", "当前没有表格型数据，无法批量生成。")
             return
         self._collect_mappings()
-        try:
-            results, errors = report_service.generate_batch(state)
-        except FormoraError as e:
-            QMessageBox.critical(self, "批量生成失败", str(e))
-            return
-        output_dir = Path(state.config.get("output_dir")) / f"{state.task.name}_批量"
+        self.issues_text.setPlainText("⏳ 正在批量生成，请稍候…（可在生成过程中继续浏览其他页面）")
+        self._set_busy(True)
+        self._batch_thread = _TaskThread(
+            report_service.generate_batch,
+            state, auto_chart=self.chart_check.isChecked())
+        self._batch_thread.result_ready.connect(self._on_batch_done)
+        self._batch_thread.error_raised.connect(self._on_batch_error)
+        self._batch_thread.start()
+
+    def _on_batch_done(self, payload):
+        self._set_busy(False)
+        results, errors = payload
+        state = self.state
+        output_dir = getattr(state, "last_batch_dir", None) or (
+            Path(state.config.get("output_dir")) / f"{state.task.name}_批量")
         summary = [f"✅ 批量生成完成：成功 {len(results)} 份，失败 {len(errors)} 份。",
                    f"输出目录：{output_dir}"]
         summary.extend(f"  - {p}" for p in results[:20])
@@ -314,6 +380,11 @@ class MappingPage(QWidget):
             summary.append("\n失败：")
             summary.extend(errors[:10])
         self.issues_text.setPlainText("\n".join(summary))
+
+    def _on_batch_error(self, msg):
+        self._set_busy(False)
+        QMessageBox.critical(self, "批量生成失败", msg)
+        self.issues_text.setPlainText(f"批量生成失败：{msg}")
 
     # ---------- AI 辅助（可选） ----------
 
@@ -350,17 +421,18 @@ class MappingPage(QWidget):
             QMessageBox.warning(self, "提示", "当前没有可用的实验素材文本。请先在「文档导入」页导入 TXT/MD/PDF 或表格数据。")
             return
 
-        self.issues_text.setPlainText("⏳ AI 正在根据素材提取字段内容，请稍候…")
+        self.issues_text.setPlainText("⏳ AI 正在根据素材提取字段内容，请稍候…（可在生成过程中继续浏览其他页面）")
         QMessageBox.information(
             self, "提示",
             "AI 只会依据素材生成内容；无依据的字段会标记为「待补充」，生成后请逐项检查再导出。")
-        try:
-            result = client.extract_fields(cfg, materials, fields)
-        except FormoraError as e:
-            self.issues_text.setPlainText(f"AI 请求失败：{e}")
-            QMessageBox.critical(self, "AI 失败", str(e))
-            return
+        self._set_busy(True)
+        self._ai_thread = _TaskThread(client.extract_fields, cfg, materials, fields)
+        self._ai_thread.result_ready.connect(self._on_ai_done)
+        self._ai_thread.error_raised.connect(self._on_ai_error)
+        self._ai_thread.start()
 
+    def _on_ai_done(self, result):
+        self._set_busy(False)
         by_field = {m.template_field: m for m in self.state.mappings}
         applied = 0
         confirmed = []
@@ -378,7 +450,6 @@ class MappingPage(QWidget):
             m.needs_confirmation = needs
             confirmed.append(f"{fname}" + ("（待确认）" if needs else ""))
             applied += 1
-
         self.state.task.log("info", "system", f"AI 辅助填充 {applied} 个字段")
         self._fill_table()
         note = [
@@ -387,3 +458,8 @@ class MappingPage(QWidget):
             "已处理字段：" + ("、".join(confirmed[:20]) if confirmed else "无"),
         ]
         self.issues_text.setPlainText("\n".join(note))
+
+    def _on_ai_error(self, msg):
+        self._set_busy(False)
+        self.issues_text.setPlainText(f"AI 请求失败：{msg}")
+        QMessageBox.critical(self, "AI 失败", msg)

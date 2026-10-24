@@ -2,12 +2,16 @@
 
 两者都不可用时抛出 ExternalDependencyError，并给出安装建议。
 这是诚实边界：不虚拟 PDF 输出。
+
+LibreOffice 单用户 profile 有锁，并发无头转换会互相失败，
+因此用进程级文件锁串行化 LibreOffice 转换。
 """
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 from .errors import ExternalDependencyError
@@ -16,6 +20,9 @@ _LIBREOFFICE_CANDIDATES = [
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
 ]
+
+# LibreOffice 转换互斥锁：同进程内串行，避免并发无头转换互相抢占 profile
+_lo_lock = threading.Lock()
 
 
 def find_libreoffice() -> Path | None:
@@ -61,7 +68,8 @@ def _export_with_libreoffice(soffice: Path, docx_path: Path, output: Path) -> Pa
         "--outdir", str(output.parent), str(docx_path),
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        with _lo_lock:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
     except subprocess.CalledProcessError as e:
         raise ExternalDependencyError(f"LibreOffice 转换失败: {e.stderr.decode('utf-8', 'replace')}")
     except subprocess.TimeoutExpired:

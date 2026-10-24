@@ -100,9 +100,14 @@ assert any(m.source_type == "image" or m.template_field in img_vars
 
 # 批量生成全部数据行
 mp._generate_batch()
-app.processEvents()
-batch_dir = Path(state.config.get("output_dir")) / "UI冒烟测试_批量"
-batch_files = sorted(batch_dir.glob("*.docx")) if batch_dir.exists() else []
+# 批量生成已异步化：轮询等待后台线程完成（最多 30 秒）
+import time
+deadline = time.time() + 30
+while time.time() < deadline and not getattr(state, "last_batch_dir", None):
+    app.processEvents()
+    time.sleep(0.05)
+batch_dir = getattr(state, "last_batch_dir", None)
+batch_files = sorted(Path(batch_dir).glob("*.docx")) if batch_dir else []
 print("批量生成文件数:", len(batch_files), "目录:", batch_dir)
 assert len(batch_files) == len(ds.rows), f"批量数量不符: {len(batch_files)} != {len(ds.rows)}"
 assert all(f.exists() for f in batch_files)

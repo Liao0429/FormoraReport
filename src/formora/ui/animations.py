@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer
 
 # 全局开关：系统启用「减少动态效果」时关闭动画
 _REDUCE_MOTION = False

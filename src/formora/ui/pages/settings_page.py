@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from formora.ai import client
+from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 
 

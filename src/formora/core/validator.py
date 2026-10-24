@@ -1,6 +1,8 @@
 """校验：检查缺失字段、空数据、异常格式，输出明确问题清单。"""
 from __future__ import annotations
 
+from pathlib import Path
+
 from .models import FieldMapping, TemplateInfo, ValidationIssue
 
 CORE_FIELDS = ["实验名称", "实验目的", "实验环境", "实验步骤", "实验数据",
@@ -18,6 +20,15 @@ def validate_mappings(mappings: list[FieldMapping]) -> list[ValidationIssue]:
             issues.append(ValidationIssue(
                 severity="warning", field=m.template_field,
                 message="字段为常量但未填写值，生成时将为空。"))
+        if m.source_type == "image":
+            if not m.value:
+                issues.append(ValidationIssue(
+                    severity="error", field=m.template_field,
+                    message="图片字段未选择图片，报告将缺少该插图。"))
+            elif not Path(str(m.value)).exists():
+                issues.append(ValidationIssue(
+                    severity="error", field=m.template_field,
+                    message=f"图片文件不存在：{m.value}"))
     return issues
 
 
