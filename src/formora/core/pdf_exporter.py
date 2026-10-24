@@ -17,8 +17,15 @@ from pathlib import Path
 from .errors import ExternalDependencyError
 
 _LIBREOFFICE_CANDIDATES = [
+    # Windows
     r"C:\Program Files\LibreOffice\program\soffice.exe",
     r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    # macOS
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    # Linux（常见发行版）
+    "/usr/bin/soffice",
+    "/usr/lib/libreoffice/program/soffice",
+    "/snap/bin/soffice",
 ]
 
 # LibreOffice 转换互斥锁：同进程内串行，避免并发无头转换互相抢占 profile

@@ -2,6 +2,18 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.6.0] - 2026-10-25
+
+### Changed（阶段1跨平台化：让核心流程在 macOS/Linux 可跑通）
+
+- **LibreOffice 候选路径补全**：`pdf_exporter` 在原有 Windows 路径基础上，新增 macOS（`/Applications/LibreOffice.app/...`）与 Linux（`/usr/bin/soffice`、`/usr/lib/libreoffice/...`、`/snap/bin/soffice`）候选，服务端/Linux 桌面可直接无头转 PDF
+- **平台目录规范**：`config.py` 在非 Windows 遵循 XDG（`~/.config/FormoraReport`），文档目录自动探测真实 Documents/文档目录；Windows 行为完全不变
+- **无边框边缘缩放的平台守卫**：`main_window.nativeEvent` 增加 `_IS_WINDOWS` 前置判断，非 Windows 直接走系统默认，不再每次 try-import
+
+### 兼容性
+
+- Windows 行为不变；**259 项自动化测试通过**（新增跨平台候选/目录/守卫，未改既有断言）。
+
 ## [2.5.0] - 2026-10-25
 
 ### Added（第五轮作者视角多 Agent 评审：代码规范 / 跨平台 / 可移植性 / 测试质量）

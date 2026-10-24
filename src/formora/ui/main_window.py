@@ -6,6 +6,10 @@
 """
 from __future__ import annotations
 
+import sys
+
+_IS_WINDOWS = sys.platform == "win32"
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -157,7 +161,9 @@ class MainWindow(QMainWindow):
     # ---------- 无边框窗口边缘缩放 ----------
 
     def nativeEvent(self, event_type, message):
-        """处理 WM_NCHITTEST，支持无边框窗口 8 向边缘缩放。"""
+        """处理 WM_NCHITTEST，支持无边框窗口 8 向边缘缩放（仅 Windows）。"""
+        if not _IS_WINDOWS:
+            return super().nativeEvent(event_type, message)
         import ctypes
         import ctypes.wintypes
         try:

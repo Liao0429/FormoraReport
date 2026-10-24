@@ -16,11 +16,24 @@ _IS_WINDOWS = sys.platform == "win32"
 
 from formora.core.errors import UserError
 
-APP_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "FormoraReport"
+if _IS_WINDOWS:
+    _app_root = Path(os.environ.get("APPDATA", str(Path.home()))) / "FormoraReport"
+    _documents_root = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+else:
+    # macOS/Linux：遵循 XDG 规范（~/.config/FormoraReport）；文档目录探测真实 Documents
+    _app_root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "FormoraReport"
+    _candidates = [
+        Path.home() / "Documents",
+        Path.home() / "文档",
+        Path.home(),
+    ]
+    _documents_root = next((p for p in _candidates if p.is_dir()), Path.home())
+
+APP_DIR = _app_root
 CONFIG_PATH = APP_DIR / "config.json"
 LOG_DIR = APP_DIR / "logs"
 HISTORY_PATH = APP_DIR / "history.jsonl"
-OUTPUT_DEFAULT_DIR = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents" / "FormoraReport"
+OUTPUT_DEFAULT_DIR = _documents_root / "FormoraReport"
 
 DEFAULTS = {
     "theme": "light",
