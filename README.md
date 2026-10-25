@@ -9,6 +9,10 @@ Automated lab report generator for Windows — import a DOCX report template, ex
 
 ---
 
+## Downloads
+
+Grab the latest **single-file portable EXE** from the [Releases page](https://github.com/Liao0429/FormoraReport/releases). Every release ships a `FormoraReport.exe` asset — no Python installation required.
+
 ## Screenshots
 
 *Liquid Glass UI · light mode*
@@ -92,6 +96,46 @@ python -m pytest tests/ -q
 pyinstaller --noconfirm --clean --name FormoraReport --windowed \
   --collect-all matplotlib --collect-all docxtpl main.py
 ```
+
+## REST API
+
+FormoraReport ships a lightweight FastAPI server for headless / remote / mini-program integration. It exposes the same core pipeline (template parsing → data reading → mapping → generation → download → PDF → text extraction) over HTTP.
+
+**Start the server:**
+
+```bash
+pip install -r requirements-api.txt
+python api_server.py --port 8000
+```
+
+- Interactive docs (Swagger UI): http://127.0.0.1:8000/docs
+- Health check: `GET /api/health`
+
+**Authentication (optional):** set the `FORMORA_API_KEY` environment variable to require a `Bearer` token on every endpoint except `/api/health`.
+
+```bash
+curl -H "Authorization: Bearer $FORMORA_API_KEY" http://127.0.0.1:8000/api/data/read
+```
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|---|---|---|
+| `FORMORA_API_KEY` | *(unset)* | Enables Bearer auth on all API endpoints except `/api/health` |
+| `FORMORA_MAX_UPLOAD_MB` | `20` | Maximum upload size per file (MB) |
+| `FORMORA_FILE_TTL_HOURS` | `1` | Hours before cached files/tasks expire |
+| `FORMORA_MAX_CACHED_FILES` | `50` | Max cached files before oldest are pruned |
+| `FORMORA_CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
+
+## Packaging
+
+Build the single-file portable EXE with the checked-in PyInstaller spec:
+
+```bash
+python -m PyInstaller --noconfirm --clean FormoraReport-onefile.spec
+```
+
+The artifact is written to `dist/FormoraReport.exe` — double-click to run, no Python required.
 
 ## Tests
 

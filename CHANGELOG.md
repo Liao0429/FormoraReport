@@ -2,6 +2,23 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.12.0] - 2026-10-25
+
+### Added
+
+- **README / README.zh-CN 补充 REST API 章节**：启动方式（requirements-api.txt + api_server.py）、Swagger UI、Bearer 鉴权示例
+- **环境变量表**：`FORMORA_API_KEY` / `FORMORA_MAX_UPLOAD_MB` / `FORMORA_FILE_TTL_HOURS` / `FORMORA_MAX_CACHED_FILES` / `FORMORA_CORS_ORIGINS`
+- **Downloads / 打包说明**：链接 Releases 页，统一使用 `FormoraReport-onefile.spec` 构建单文件 EXE
+- **中文 README 构建命令统一**：`uv venv/uv pip` → 标准 `python -m venv` + `pip`（与英文版一致）
+
+### Fixed
+
+- **pdf_exporter docstring**：将误导的「进程级文件锁」修正为「进程内线程锁（threading.Lock）」，明确不跨进程
+
+### 兼容性
+
+- **289 项自动化测试全部通过**。
+
 ## [2.11.0] - 2026-10-25
 
 ### Fixed（100-Agent 大规模评审后的手动接管修复）

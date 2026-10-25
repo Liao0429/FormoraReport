@@ -4,7 +4,8 @@
 这是诚实边界：不虚拟 PDF 输出。
 
 LibreOffice 单用户 profile 有锁，并发无头转换会互相失败，
-因此用进程级文件锁串行化 LibreOffice 转换。
+因此用进程内线程锁（threading.Lock）串行化 LibreOffice 转换。
+注意：该锁只对本进程内的线程生效，不跨进程。
 """
 
 from __future__ import annotations

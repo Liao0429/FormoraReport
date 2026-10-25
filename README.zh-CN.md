@@ -80,12 +80,12 @@ Windows 实验报告自动填写工具 —— 导入实验报告模板、实验�
 
 ```bash
 # 1. 创建虚拟环境
-uv venv .venv
+python -m venv .venv
 source .venv/Scripts/activate    # Windows git-bash
 # 或 .venv\Scripts\activate
 
 # 2. 安装依赖
-uv pip install -r requirements.txt
+pip install -r requirements.txt
 
 # 3. 运行
 python main.py
@@ -93,10 +93,53 @@ python main.py
 # 4. 运行测试
 python -m pytest tests/ -q
 
-# 5. 打包 EXE
-pyinstaller --noconfirm --clean --name FormoraReport --windowed \
-  --collect-all matplotlib --collect-all docxtpl main.py
+# 5. 打包单文件 EXE（使用仓库内置的 PyInstaller spec）
+python -m PyInstaller --noconfirm --clean FormoraReport-onefile.spec
 ```
+
+## REST API
+
+FormoraReport 附带一个轻量级 FastAPI 服务，可用于无界面 / 远程 / 小程序集成。它通过 HTTP 暴露同一套核心流程（模板解析 → 数据读取 → 映射 → 生成 → 下载 → PDF → 文本抽取）。
+
+**启动服务：**
+
+```bash
+pip install -r requirements-api.txt
+python api_server.py --port 8000
+```
+
+- 交互式文档（Swagger UI）：http://127.0.0.1:8000/docs
+- 健康检查：`GET /api/health`
+
+**可选鉴权：** 设置环境变量 `FORMORA_API_KEY` 后，除 `/api/health` 外所有端点都需要 `Bearer` 令牌。
+
+```bash
+curl -H "Authorization: Bearer $FORMORA_API_KEY" http://127.0.0.1:8000/api/data/read
+```
+
+**环境变量表：**
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `FORMORA_API_KEY` | *（不设置）* | 为除 `/api/health` 外的所有 API 端点启用 Bearer 鉴权 |
+| `FORMORA_MAX_UPLOAD_MB` | `20` | 单个文件最大上传体积（MB） |
+| `FORMORA_FILE_TTL_HOURS` | `1` | 缓存文件/任务过期时间（小时） |
+| `FORMORA_MAX_CACHED_FILES` | `50` | 缓存文件上限，超出后清理最旧 |
+| `FORMORA_CORS_ORIGINS` | `*` | 允许的 CORS 来源（逗号分隔） |
+
+## 打包说明
+
+使用仓库内置的 PyInstaller spec 构建单文件便携版 EXE：
+
+```bash
+python -m PyInstaller --noconfirm --clean FormoraReport-onefile.spec
+```
+
+产物输出到 `dist/FormoraReport.exe`——双击即可运行，无需安装 Python。
+
+## 下载
+
+从 [Releases 发布页](https://github.com/Liao0429/FormoraReport/releases) 获取最新的**单文件便携版 EXE**。每个版本都附带 `FormoraReport.exe` 资产，解压即用，无需安装。
 
 ## 测试
 

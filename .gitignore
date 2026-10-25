@@ -47,3 +47,8 @@ htmlcov/
 # 系统
 Thumbs.db
 .DS_Store
+
+# 本地调试/打包临时报告（不入库）
+reports/push_*.txt
+reports/test_*.txt
+reports/git_*.txt
