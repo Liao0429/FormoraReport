@@ -7,13 +7,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from datetime import datetime
 
 from formora.core.models import ReportTask
+
+logger = logging.getLogger("formora.history")
 from formora.services.config import HISTORY_PATH
 
 _lock = threading.Lock()
+# 历史文件保留的最大条数：超过则轮转，避免无限膨胀（与日志轮转策略对齐）
+MAX_HISTORY_ENTRIES = 2000
+
+
+def _trim_history() -> None:
+    """历史超长时只保留最近 MAX_HISTORY_ENTRIES 条，重写文件。"""
+    try:
+        lines = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+        if len(lines) > MAX_HISTORY_ENTRIES:
+            trimmed = lines[-MAX_HISTORY_ENTRIES:]
+            HISTORY_PATH.write_text("\n".join(trimmed) + "\n", encoding="utf-8")
+            logger.info("历史记录已轮转：保留最近 %d 条", MAX_HISTORY_ENTRIES)
+    except OSError:
+        pass
 
 
 def _data_source_str(ds) -> str | None:
@@ -53,6 +70,12 @@ def record_task(task: ReportTask):
         HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(HISTORY_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # 文件过大时轮转（约 5MB 以上），避免长期使用无限膨胀
+        try:
+            if HISTORY_PATH.stat().st_size > 5 * 1024 * 1024:
+                _trim_history()
+        except OSError:
+            pass
 
 
 def load_history(limit: int = 50) -> list[dict]:
@@ -67,6 +90,7 @@ def load_history(limit: int = 50) -> list[dict]:
             try:
                 entries.append(json.loads(line))
             except Exception:
+                logger.warning("历史记录第 %d 行无法解析，已跳过", len(entries) + 1)
                 continue
     return entries[-limit:][::-1]  # 最新在前
 

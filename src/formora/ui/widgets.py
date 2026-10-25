@@ -19,13 +19,13 @@ class Card(QFrame):
     def __init__(self, title: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(18, 16, 18, 16)
-        self.layout.setSpacing(10)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(18, 16, 18, 16)
+        self._layout.setSpacing(10)
         if title:
             self.title_label = QLabel(title)
             self.title_label.setObjectName("CardTitle")
-            self.layout.addWidget(self.title_label)
+            self._layout.addWidget(self.title_label)
         # 柔和阴影
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(24)
@@ -34,10 +34,10 @@ class Card(QFrame):
         self.setGraphicsEffect(shadow)
 
     def add_widget(self, w: QWidget):
-        self.layout.addWidget(w)
+        self._layout.addWidget(w)
 
     def add_layout(self, layout):
-        self.layout.addLayout(layout)
+        self._layout.addLayout(layout)
 
 
 def primary_button(text: str, parent=None) -> QPushButton:

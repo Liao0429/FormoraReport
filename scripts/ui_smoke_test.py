@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 from pathlib import Path
 
 # GitHub Actions/Windows 控制台默认 cp1252，强制 UTF-8，避免打印中文时 UnicodeEncodeError
@@ -12,6 +13,7 @@ try:
 except Exception:
     pass
 
+# 必须在导入 PySide6 之前强制 offscreen 平台，否则 CI/无显示器环境会尝试创建真实窗口
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -46,7 +48,7 @@ info = template_parser.parse_template(TEMPLATE)
 ds = data_reader.read_data(DATA)
 state.new_task(name="UI冒烟测试")
 state.task.template_path = TEMPLATE
-state.task.data_source = DATA
+state.task.data_source = ds
 state.template = info
 state.data = ds
 
@@ -104,8 +106,6 @@ assert any(
 # 批量生成全部数据行
 mp._generate_batch()
 # 批量生成已异步化：轮询等待后台线程完成（最多 30 秒）
-import time
-
 deadline = time.time() + 30
 while time.time() < deadline and not getattr(state, "last_batch_dir", None):
     app.processEvents()

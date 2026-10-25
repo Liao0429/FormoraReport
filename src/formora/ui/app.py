@@ -15,19 +15,23 @@ def _install_excepthook():
         try:
             from PySide6.QtWidgets import QMessageBox
 
+            # 只展示中文兜底文案，避免把原始异常堆栈/敏感信息直接暴露给用户。
             QMessageBox.critical(
                 None,
                 "程序错误",
-                f"发生未预期的错误：\n{exc_value}\n\n详细信息已写入日志。",
+                "发生未预期的错误，详细信息已写入日志。",
             )
         except Exception:
-            pass
+            # 弹窗失败（如 QApplication 尚未创建）也必须确保日志已写入。
+            logger.exception("无法显示错误提示对话框")
 
     sys.excepthook = hook
 
 
 def _apply_reduce_motion():
     """读取 Windows「在 Windows 中显示动画」设置，关闭应用内动画（可访问性）。"""
+    # 非 Windows（无 winreg）或注册表读取失败时默认不减少动画：降级安全。
+    reduce_motion = False
     try:
         import winreg
 
@@ -35,10 +39,10 @@ def _apply_reduce_motion():
             winreg.HKEY_CURRENT_USER, r"Control Panel\Accessibility\Visual Effects"
         ) as key:
             value, _ = winreg.QueryValueEx(key, "VisualFXSetting")
-            # 1 = 显示动画；2 = 无动画
-            reduce_motion = value == "2"
+            # 1 = 显示动画；2 = 无动画（注册表值可能是 str 或 int，统一转字符串比较）
+            reduce_motion = str(value).strip() == "2"
     except Exception:
-        reduce_motion = False
+        pass  # 非 Windows 或注册表不可用：保持默认 reduce_motion = False
     try:
         from formora.ui.animations import set_reduce_motion
 

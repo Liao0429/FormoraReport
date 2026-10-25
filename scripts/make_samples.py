@@ -2,10 +2,14 @@
 """生成真实样例：一个含占位符/循环/图表位的 DOCX 实验报告模板 + CSV 实验数据。
 
 用于 MVP 验证和自动化测试。生成到 tests/samples/。
+
+样例内容完全确定：不依赖随机数、时间戳或当前工作目录，重复运行生成一致结果，
+便于在 CI / 自动化测试中复现。
 """
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 from docx import Document
@@ -14,8 +18,25 @@ from docx.shared import Pt
 
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 
+# 样例 CSV 数据。数值以字符串书写，避免浮点序列化差异，保证字节级可复现。
+_SAMPLE_ROWS: list[list[str]] = [
+    ["项目", "数值"],
+    ["样本A", "12.5"],
+    ["样本B", "18.2"],
+    ["样本C", "15.7"],
+    ["样本D", "21.3"],
+]
 
-def make_template(path: Path):
+
+def _h(doc: Document, text: str) -> None:
+    """添加一个加粗段落，作为章节标题。"""
+    p = doc.add_paragraph()
+    run = p.add_run(text)
+    run.bold = True
+
+
+def make_template(path: Path) -> None:
+    """生成含占位符/循环/图表位的 DOCX 实验报告模板。"""
     doc = Document()
     # 标题
     title = doc.add_paragraph()
@@ -61,29 +82,15 @@ def make_template(path: Path):
     print(f"模板已生成: {path}")
 
 
-def _h(doc, text):
-    p = doc.add_paragraph()
-    run = p.add_run(text)
-    run.bold = True
-
-
-def make_csv(path: Path):
-    import csv
-
-    rows = [
-        ["项目", "数值"],
-        ["样本A", 12.5],
-        ["样本B", 18.2],
-        ["样本C", 15.7],
-        ["样本D", 21.3],
-    ]
+def make_csv(path: Path) -> None:
+    """生成 UTF-8（带 BOM）CSV 实验数据。"""
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
-        w.writerows(rows)
+        w.writerows(_SAMPLE_ROWS)
     print(f"数据已生成: {path}")
 
 
-def main():
+def main() -> None:
     SAMPLES.mkdir(parents=True, exist_ok=True)
     make_template(SAMPLES / "实验报告模板.docx")
     make_csv(SAMPLES / "实验数据.csv")

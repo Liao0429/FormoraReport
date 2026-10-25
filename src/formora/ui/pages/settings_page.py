@@ -46,6 +46,7 @@ class SettingsPage(QWidget):
         super().__init__()
         self.state = state
         self.on_theme_change = on_theme_change
+        self._test_thread = None
         self._build()
         self._load()
 
@@ -131,12 +132,15 @@ class SettingsPage(QWidget):
         self.theme_combo.setCurrentIndex(
             0 if cfg.get("theme", "light") == "light" else 1
         )
-        self.outdir_edit.setText(cfg.get("output_dir"))
-        ai = cfg.get("ai", {})
+        self.outdir_edit.setText(cfg.get("output_dir") or "")
+        ai = cfg.get("ai", {}) or {}
         self.ai_enabled.setChecked(bool(ai.get("enabled")))
-        self.ai_base.setText(ai.get("base_url", ""))
-        self.ai_model.setText(ai.get("model", ""))
-        self.ai_temp.setValue(int(round((ai.get("temperature", 0.2) or 0.2) * 100)))
+        self.ai_base.setText(ai.get("base_url") or "")
+        self.ai_model.setText(ai.get("model") or "")
+        temp = ai.get("temperature", 0.2)
+        if temp is None:
+            temp = 0.2
+        self.ai_temp.setValue(int(round(float(temp) * 100)))
 
     def _save(self):
         cfg = self.state.config
@@ -160,6 +164,8 @@ class SettingsPage(QWidget):
 
     def _test_ai(self):
         # 临时用当前界面值测试，不落盘；后台线程执行，避免阻塞 UI
+        if self._test_thread is not None and self._test_thread.isRunning():
+            return
         base_url = self.ai_base.text().strip()
         model = self.ai_model.text().strip()
         key = self.ai_key.text().strip() or self.state.config.get_ai_api_key()
@@ -168,19 +174,31 @@ class SettingsPage(QWidget):
             return
         self.test_btn.setEnabled(False)
         self.test_btn.setText("测试中…")
-        self._test_thread = _TestConnectionThread(base_url, model, key)
-        self._test_thread.finished_ok.connect(self._on_test_ok)
-        self._test_thread.failed.connect(self._on_test_failed)
-        self._test_thread.finished.connect(
-            lambda: (self.test_btn.setEnabled(True), self.test_btn.setText("测试连接"))
-        )
-        self._test_thread.start()
+        thread = _TestConnectionThread(base_url, model, key)
+        self._test_thread = thread
+        thread.finished_ok.connect(self._on_test_ok)
+        thread.failed.connect(self._on_test_failed)
+        thread.finished.connect(self._on_test_finished)
+        # 线程结束后安全释放 C++ 对象，避免内存泄漏
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
 
     def _on_test_ok(self, summary: str):
         QMessageBox.information(self, "连接成功", f"模型响应正常。\n{summary}")
 
     def _on_test_failed(self, msg: str):
         QMessageBox.critical(self, "连接失败", msg)
+
+    def _on_test_finished(self):
+        self.test_btn.setEnabled(True)
+        self.test_btn.setText("测试连接")
+
+    def closeEvent(self, event):
+        # 防止页面在测试线程仍运行时销毁导致 "QThread: Destroyed while thread is still running"
+        thread = getattr(self, "_test_thread", None)
+        if thread is not None and thread.isRunning():
+            thread.wait(3000)
+        super().closeEvent(event)
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(

@@ -92,26 +92,37 @@ def _now() -> float:
 
 
 def _prune_expired() -> None:
-    """清理过期文件与超容量的最旧条目，避免内存/磁盘无限增长。"""
+    """清理过期文件与超容量的最旧条目，并删除对应磁盘文件，避免内存/磁盘无限增长。"""
     now = _now()
+
+    def _drop(records: dict[str, "_FileRecord | _TaskRecord"], key: str) -> None:
+        """弹出记录并同步删除磁盘文件，保证内存字典与磁盘一致。"""
+        rec = records.pop(key, None)
+        if rec is not None:
+            try:
+                rec.path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     for fid in [
         fid for fid, rec in _FILES.items() if now - rec.created_at > FILE_TTL_SECONDS
     ]:
-        _FILES.pop(fid, None)
+        _drop(_FILES, fid)
     for tid in [
         tid for tid, rec in _TASKS.items() if now - rec.created_at > FILE_TTL_SECONDS
     ]:
-        _TASKS.pop(tid, None)
+        _drop(_TASKS, tid)
+
     if len(_FILES) > MAX_CACHED_FILES:
         for fid in sorted(_FILES, key=lambda f: _FILES[f].created_at)[
             : len(_FILES) - MAX_CACHED_FILES
         ]:
-            _FILES.pop(fid, None)
+            _drop(_FILES, fid)
     if len(_TASKS) > MAX_CACHED_FILES:
         for tid in sorted(_TASKS, key=lambda t: _TASKS[t].created_at)[
             : len(_TASKS) - MAX_CACHED_FILES
         ]:
-            _TASKS.pop(tid, None)
+            _drop(_TASKS, tid)
 
 
 def _cleanup_workdir() -> None:
@@ -224,6 +235,7 @@ def _handle_error(exc: Exception) -> HTTPException:
     if isinstance(exc, DocumentFormatError):
         return HTTPException(status_code=422, detail="文件格式不支持，请检查文件内容")
     if isinstance(exc, ExternalDependencyError):
+        logger.warning("外部依赖不可用: %s", exc)
         return HTTPException(
             status_code=503, detail="外部依赖不可用（LibreOffice/Word/网络）"
         )

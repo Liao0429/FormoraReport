@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import logging
 import json
 import os
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 _IS_WINDOWS = sys.platform == "win32"
 
 from formora.core.errors import UserError
+
+logger = logging.getLogger("formora.config")
 
 if _IS_WINDOWS:
     _app_root = Path(os.environ.get("APPDATA", str(Path.home()))) / "FormoraReport"
@@ -120,19 +123,35 @@ class Config:
         self.data = self._load()
 
     def _load(self) -> dict:
-        if self.path.exists():
+        if not self.path.exists():
+            return copy.deepcopy(DEFAULTS)
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            # 配置损坏：备份原件后回退默认，避免下次保存覆盖损坏文件
             try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-            except Exception:
-                raw = {}
-            merged = copy.deepcopy(DEFAULTS)
-            merged.update(raw)
-            if isinstance(merged.get("ai"), dict):
-                ai = dict(DEFAULTS["ai"])
-                ai.update(merged["ai"])
-                merged["ai"] = ai
-            return merged
-        return copy.deepcopy(DEFAULTS)
+                bak = self.path.with_suffix(".json.bak")
+                self.path.replace(bak)
+                logger.warning("配置文件损坏，已备份为 %s 并使用默认配置", bak)
+            except OSError:
+                logger.warning("配置文件损坏且无法备份，已使用默认配置")
+            return copy.deepcopy(DEFAULTS)
+        if not isinstance(raw, dict):
+            # 合法 JSON 但非对象（数组/标量）：按损坏处理
+            try:
+                bak = self.path.with_suffix(".json.bak")
+                self.path.replace(bak)
+                logger.warning("配置文件格式异常（非对象），已备份为 %s 并使用默认配置", bak)
+            except OSError:
+                logger.warning("配置文件格式异常（非对象），已使用默认配置")
+            return copy.deepcopy(DEFAULTS)
+        merged = copy.deepcopy(DEFAULTS)
+        merged.update(raw)
+        if isinstance(merged.get("ai"), dict):
+            ai = dict(DEFAULTS["ai"])
+            ai.update(merged["ai"])
+            merged["ai"] = ai
+        return merged
 
     def save(self):
         """原子写配置：先写临时文件再替换，避免崩溃/断电损坏 config.json。"""

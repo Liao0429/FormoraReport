@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -24,6 +25,8 @@ from formora.ui.widgets import (
     primary_button,
     secondary_button,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ImportPage(QWidget):
@@ -75,10 +78,12 @@ class ImportPage(QWidget):
         lay.addWidget(info_card, 1)
 
         bottom = QHBoxLayout()
-        next_btn = primary_button("下一步：字段映射 →")
-        next_btn.clicked.connect(lambda: self.navigate("mapping"))
+        self.next_btn = primary_button("下一步：字段映射 →")
+        self.next_btn.clicked.connect(lambda: self.navigate("mapping"))
+        # 未成功解析出模板前，不允许进入字段映射。
+        self.next_btn.setEnabled(self.state.template is not None)
         bottom.addStretch(1)
-        bottom.addWidget(next_btn)
+        bottom.addWidget(self.next_btn)
         lay.addLayout(bottom)
 
     def _pick_template(self):
@@ -132,7 +137,9 @@ class ImportPage(QWidget):
                     "请在 Word 中用 {{实验名称}} 这样的标记标出待填位置，再重新导入。"
                 )
             if info.loop_blocks:
-                lines.append("检测到 1 个数据循环区（用于逐条列出实验数据）：")
+                lines.append(
+                    f"检测到 {len(info.loop_blocks)} 个数据循环区（用于逐条列出实验数据）："
+                )
                 lines.append("　该区域由数据自动填充，无需在右侧单独填写。")
             if info.sections:
                 lines.append("识别到的章节：" + "、".join(info.sections.keys()))
@@ -150,5 +157,16 @@ class ImportPage(QWidget):
                 "\n下一步：点击「下一步：字段映射 →」，把模板空位与数据列对应起来。"
             )
             self.info_text.setPlainText("\n".join(lines))
+            # 模板已成功解析，允许进入字段映射。
+            self.next_btn.setEnabled(True)
         except FormoraError as e:
-            QMessageBox.critical(self, "解析失败", str(e))
+            logger.error("解析模板/数据失败（用户可见错误）: %s", e)
+            QMessageBox.critical(self, "解析失败", e.user_message)
+        except Exception as e:
+            # 未知异常：记录详细堆栈供排查，用户只看友好提示，避免暴露内部细节。
+            logger.exception("解析模板/数据时发生未预期的错误: %s", e)
+            QMessageBox.critical(
+                self,
+                "解析失败",
+                "解析时发生意外错误，请检查文件是否损坏、格式是否受支持，或稍后重试。",
+            )

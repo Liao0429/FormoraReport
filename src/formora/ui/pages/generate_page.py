@@ -72,6 +72,10 @@ class GeneratePage(QWidget):
             self.log_text.setPlainText(
                 "\n".join(f"[{l.level}] {l.message}" for l in logs) or "（无日志）"
             )
+        else:
+            # 新任务尚未生成：清空残留的上一次输出，避免界面与行为矛盾
+            self.out_edit.clear()
+            self.log_text.setPlainText("（尚未生成报告）")
         # 有批次目录才允许批量导出 PDF
         if hasattr(self, "batch_pdf_btn"):
             has_batch = bool(getattr(self.state, "last_batch_dir", None))

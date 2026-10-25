@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 from formora.core import chart, generator, mapper
 from formora.core.errors import FormoraError
+from formora.core.models import DataSource, FieldMapping, ReportTask, TemplateInfo
+from formora.services.config import Config
 from formora.services.history import record_task
 
 # 图片字段关键字：字段名含这些完整词时按图片处理（避免「地图/图纸/图标/图形」等文本字段误判）
@@ -67,6 +70,21 @@ _NON_IMAGE_EXCLUDE = (
 )
 
 
+class ReportState(Protocol):
+    """报告服务依赖的最小任务状态接口（保持无 Qt）。
+
+    formora.ui.app_state.AppState 及测试用 SimpleNamespace 桩均满足该结构；
+    用 Protocol 而非直接导入 AppState，避免服务层反向依赖 UI 包。
+    """
+
+    config: Config
+    task: ReportTask | None
+    template: TemplateInfo | None
+    data: DataSource | None
+    mappings: list[FieldMapping]
+    output_path: str | None
+
+
 def is_image_field(name: str) -> bool:
     """字段名是否应按图片处理（排除地图/图纸/图标等文本字段）。"""
     low = (name or "").lower()
@@ -83,7 +101,7 @@ def is_chart_field(name: str) -> bool:
     return any(k in low for k in _CHART_KEYWORDS)
 
 
-def materials_text(state) -> str:
+def materials_text(state: ReportState) -> str:
     """汇总当前任务可用作 AI 素材的文本（文本型全文 + 表格型前 50 行）。"""
     data = state.data
     if not data:
@@ -97,7 +115,7 @@ def materials_text(state) -> str:
     return "\n".join(parts)
 
 
-def resolve_context(state, row: dict | None = None) -> dict:
+def resolve_context(state: ReportState, row: dict | None = None) -> dict:
     """根据映射与当前数据行解析模板渲染上下文。
 
     图片字段在上下文中置 None，由 image_vars 通过 InlineImage 注入；
@@ -122,7 +140,7 @@ def _chart_placeholders(mappings) -> list[str]:
     return [m.template_field for m in mappings if is_chart_field(m.template_field)]
 
 
-def auto_chart(state) -> str | None:
+def auto_chart(state: ReportState) -> str | None:
     """若数据为表格型且含数值列，自动生成折线图 PNG，返回图片路径；否则返回 None。"""
     data = state.data
     if not data or not data.rows or not data.columns:
@@ -191,7 +209,7 @@ def auto_chart(state) -> str | None:
         return None
 
 
-def collect_image_vars(state, auto_chart_enabled: bool) -> dict[str, str]:
+def collect_image_vars(state: ReportState, auto_chart_enabled: bool) -> dict[str, str]:
     """收集 {占位符: 图片路径}：显式绑定的图片字段 + 自动生成的图表。"""
     image_vars: dict[str, str] = {}
     for m in state.mappings:
@@ -205,7 +223,7 @@ def collect_image_vars(state, auto_chart_enabled: bool) -> dict[str, str]:
     return image_vars
 
 
-def image_placeholders(state, auto_chart_enabled: bool) -> set[str]:
+def image_placeholders(state: ReportState, auto_chart_enabled: bool) -> set[str]:
     """返回在渲染上下文中应视为图片的占位符集合（校验时跳过）。"""
     s = {m.template_field for m in state.mappings if m.source_type == "image"}
     if auto_chart_enabled:
@@ -226,7 +244,7 @@ def _drop_uncovered_image_fields(context: dict, mappings, image_vars: dict) -> N
                 context.pop(m.template_field, None)
 
 
-def _output_dir(state) -> Path:
+def _output_dir(state: ReportState) -> Path:
     out_dir = Path(state.config.get("output_dir") or "").expanduser()
     if not out_dir.is_absolute() and out_dir == Path("."):
         # 配置为空串时 Path("") == WindowsPath('.')，回退到默认 Documents 目录
@@ -266,7 +284,7 @@ def sanitize_filename(name: str, fallback: str = "未命名") -> str:
     return cleaned or fallback
 
 
-def _versioned_output(state, subdir: str = "", suffix: str = "输出") -> Path:
+def _versioned_output(state: ReportState, subdir: str = "", suffix: str = "输出") -> Path:
     """构造带时间戳的输出路径：<outdir>/[subdir/]<task>_<suffix>_<ts>.docx。
 
     若任务已生成过（state.output_path 存在），沿用其目录但追加新时间戳，
@@ -281,7 +299,7 @@ def _versioned_output(state, subdir: str = "", suffix: str = "输出") -> Path:
     return base / name
 
 
-def _auto_chart_enabled(state, explicit: bool | None = None) -> bool:
+def _auto_chart_enabled(state: ReportState, explicit: bool | None = None) -> bool:
     """判断是否启用自动图表：优先显式参数，其次 state.config.auto_chart（默认 True）。"""
     if explicit is not None:
         return explicit
@@ -289,7 +307,7 @@ def _auto_chart_enabled(state, explicit: bool | None = None) -> bool:
 
 
 def generate_single(
-    state, row: dict | None = None, auto_chart: bool | None = None
+    state: ReportState, row: dict | None = None, auto_chart: bool | None = None
 ) -> Path:
     """生成当前行的单份报告，更新任务状态并写入历史。返回输出路径。"""
     if not state.template:
@@ -314,7 +332,7 @@ def generate_single(
 
 
 def generate_batch(
-    state, auto_chart: bool | None = None
+    state: ReportState, auto_chart: bool | None = None
 ) -> tuple[list[str], list[str]]:
     """按数据行批量生成报告。返回 (成功输出列表, 失败信息列表)。"""
     if not state.template:
@@ -330,6 +348,10 @@ def generate_batch(
 
     results: list[str] = []
     errors: list[str] = []
+    # 性能说明（B1）：generator.generate_report 每次调用都会重新读取磁盘模板并新建
+    # DocxTemplate（zip 解析开销较大），是批量生成的主要耗时瓶颈。
+    # 低风险优化方向：给 generator 增加可选参数接收预加载的 DocxTemplate/BytesIO，
+    # 由本循环在循环外只加载一次并复用；暂不实施以免改动核心生成器接口。
     for i, row in enumerate(data.rows):
         # 复用统一映射解析，避免与单份生成逻辑分叉（含 text/constant 等所有类型）
         ctx = mapper.resolve_values(state.mappings, row=row)

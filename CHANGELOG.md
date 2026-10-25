@@ -2,6 +2,23 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
+## [2.11.0] - 2026-10-25
+
+### Fixed（100-Agent 大规模评审后的手动接管修复）
+
+- **API 磁盘清理**：`_prune_expired` 清理内存记录时同步删除对应磁盘文件，修复长期运行磁盘无限增长
+- **外部依赖错误留痕**：`_handle_error` 对 `ExternalDependencyError` 记录 `logger.warning`
+- **异常增加 `user_message` 属性**：`FormoraError` 提供 `user_message`（默认等于 str），供 UI 统一展示友好消息，避免泄露内部路径
+- **配置损坏备份与健壮性**：`config._load` 解析失败或非 dict 时先备份 `config.json.bak` 再回退默认，并记录日志
+- **历史记录轮转**：`history` 超过 2000 条或 5MB 自动轮转，损坏行记录日志
+- **主题对比度**：浅色提示文字 `_L_TEXT_HINT` 从 `#7a8a9c` 加深到 `#5f6f82`（对比度 ≥4.5:1，满足可访问性）
+- **Card.layout 改名**：`widgets.Card` 的 `self.layout` → `self._layout`，避免遮蔽 `QWidget.layout()`
+- **生成页残留输出**：`generate_page.refresh` 在无输出时清空上一次的输出路径与日志，避免界面与行为矛盾
+
+### 兼容性
+
+- **289 项自动化测试通过**。
+
 ## [2.10.0] - 2026-10-25
 
 ### Fixed（第三轮多 Agent 评审：图表 / AI UX / 跨平台测试）

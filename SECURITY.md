@@ -4,14 +4,24 @@
 
 | 版本 | 支持状态 |
 |------|----------|
-| 最新 Release（v0.x） | ✅ 受支持 |
-| 历史 Release | ⚠️ 尽力而为 |
+| 最新 Release（v2.x） | ✅ 受支持 |
+| 历史 Release（v0.x、v1.x） | ⚠️ 尽力而为 |
+
+### 支持周期说明
+
+- **当前主版本（v2.x）**：积极维护。安全漏洞修复优先发布到该系列的最新 Release。
+- **历史 Release（v0.x、v1.x）**：不再主动开发新功能，安全漏洞仅在可修复且影响面明确时尽力而为地处理；建议尽快升级到最新 v2.x 版本。
+- 「最新 Release」以 GitHub Releases 页最新发布的版本为准。
+- 已终止支持（End of Life）的版本不再接收任何安全更新。
 
 ## 隐私承诺
 
 - **无 AI 模式**：所有文件仅在本机处理，不联网、不上传。
 - **AI 模式**：仅在用户主动点击「AI 辅助填写」时，把当前任务需要的字段名与素材文本发送到用户自配的 API；不静默上传。
-- **API 密钥**：使用 Windows DPAPI（CryptProtectData）加密后存储于 `%APPDATA%/FormoraReport/config.json`，不明文落盘，不写入日志。
+- **API 密钥存储**：
+  - **配置文件（默认）**：使用 Windows DPAPI（CryptProtectData）加密后存储于 `%APPDATA%/FormoraReport/config.json`，不明文落盘，不写入日志。DPAPI 加密与当前 Windows 用户账户绑定，请保护好本机账户及 `%APPDATA%/FormoraReport/` 目录的访问权限。
+  - **环境变量（推荐）**：支持通过环境变量 `FORMORA_API_KEY` 提供 API 密钥。设置该环境变量后，程序优先从环境变量读取密钥，不再读取/写入配置文件中的密钥，进一步避免明文落盘。
+  - **优先级**：若同时存在环境变量与配置文件密钥，以环境变量 `FORMORA_API_KEY` 为准。
 - **日志**：仅记录操作摘要与错误类别，不包含文档正文、密钥或完整用户数据。
 
 ## 报告安全漏洞
