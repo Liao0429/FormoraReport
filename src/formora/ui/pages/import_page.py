@@ -73,6 +73,7 @@ class ImportPage(QWidget):
         info_card = Card("解析结果")
         self.info_text = QPlainTextEdit()
         self.info_text.setReadOnly(True)
+        self.info_text.setTabChangesFocus(True)
         self.info_text.setPlaceholderText("解析后显示占位符、章节、表格等信息")
         info_card.add_widget(self.info_text)
         lay.addWidget(info_card, 1)

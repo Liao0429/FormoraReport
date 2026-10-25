@@ -103,6 +103,7 @@ class GeneratePage(QWidget):
         log_card = Card("处理日志")
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.setTabChangesFocus(True)
         log_card.add_widget(self.log_text)
         lay.addWidget(log_card, 1)
 

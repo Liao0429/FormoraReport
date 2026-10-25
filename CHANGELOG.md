@@ -69,6 +69,25 @@
 
 - **302 项自动化测试通过**（新增 5 项）。
 
+## [2.16.0] - 2026-10-25
+
+### Added
+
+- **API 批量生成端点** `POST /api/report/generate_batch`：支持 JSON 与 multipart 上传数据文件，复用 `generate_batch` 批量生成多份 DOCX，生成文件注册为可下载任务（TTL 清理）；参数校验齐全（空映射/无数据/模板不存在/列不存在 400/404），同步版 + 异步任务队列方案注释
+- **API 基础限流**：内存滑动窗口限流中间件，默认每 IP 120 次/分钟（`FORMORA_RATE_LIMIT` 可覆盖），超限 429，`/api/health` 豁免；线程安全、进程内存实现
+- **AI 成本缓存模块** `src/formora/ai/cache.py`：参数敏感缓存键（model/temperature/json_mode/messages）、命中率统计（内存+持久化）、损坏优雅降级（原子写+fsync）、TTL/容量淘汰、`get_or_set` 接口（25 项测试；接入 `client.py` 作为下一步）
+- **历史记录可交互**：`history.get_task(id)` 单条读取；`home_page` 最近任务双击恢复场景（模板/数据源/映射完整还原并跳转映射页；缺映射/缺模板有降级路径并提示重新导入）
+- **示例模板丰富化**：新增物理实验（单摆测重力加速度）与化学实验（稀盐酸+大理石）模板+配套 CSV，6 个样例文件字节级可复现，模板解析/循环块已验证
+- **自动更新检查**：`update_checker.py` 启动 3 秒后异步检查 GitHub Releases 最新版，有新版弹窗询问打开 Releases 页，网络失败静默（6 项测试）
+- **数据隐私开关**：设置页「启用 AI 辅助」开关（默认开），关闭后 AI 客户端在任何网络请求前抛「不上传数据」提示并禁用相关设置项/测试连接按钮（隐私测试验证零网络请求）
+- **Docker 部署文件**：`Dockerfile`（python:3.12-slim + LibreOffice + Noto CJK 字体 + 非 root）+ `docker-compose.yml`（数据卷/环境变量/健康检查）+ `nginx.conf`（反代 + 限流 + 大文件上传）
+- **UI 无障碍/键盘导航**：主/次按钮 `:focus` 可见描边（浅色+深色）、只读输入框高对比样式、4 个只读文本框 `setTabChangesFocus(True)` 修复 Tab 吞焦点、主窗口初始焦点落在导航按钮
+- **超大 CSV 流式读取方案**（文档化，待落地）：>20MB 文件改「头探测 + 前 200 行预览 + chunksize 流式迭代」，实测 12.6MB 文件从 19.8s/219MB 降到 0.35s/<100MB 恒定内存；`DataSource` 扩展 `row_count/truncated/encoding/sep` 四个默认字段
+
+### Compatibility
+
+- **350 项自动化测试通过**（+48）。
+
 ## [Unreleased]
 
 ## [2.12.0] - 2026-10-25

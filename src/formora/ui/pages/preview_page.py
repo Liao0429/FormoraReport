@@ -79,6 +79,7 @@ class PreviewPage(QWidget):
         card = Card("报告内容预览")
         self.text_edit = QPlainTextEdit()
         self.text_edit.setReadOnly(True)
+        self.text_edit.setTabChangesFocus(True)
         self.text_edit.setPlaceholderText("生成后可在此预览文本内容")
         card.add_widget(self.text_edit)
         lay.addWidget(card, 1)

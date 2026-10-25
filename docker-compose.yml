@@ -1,0 +1,53 @@
+# =============================================================
+# FormoraReport API — Docker Compose 部署
+#
+# 用法：
+#   1. 编辑下方 FORMORA_API_KEY（强烈建议设置强随机密钥）
+#   2. docker compose up -d --build
+#   3. 验证: curl http://127.0.0.1:8000/api/health
+#   Swagger UI: http://127.0.0.1:8000/docs
+#
+# 环境变量说明（对应 README「REST API」章节）：
+#   FORMORA_API_KEY        Bearer 鉴权密钥；留空则所有接口免鉴权（仅 /api/health 除外）
+#   FORMORA_MAX_UPLOAD_MB  单文件上传上限（MB），默认 20
+#   FORMORA_FILE_TTL_HOURS 缓存文件/任务保留小时数，默认 1
+#   FORMORA_MAX_CACHED_FILES 最大缓存文件数，默认 1000
+#   FORMORA_RATE_LIMIT     每分钟每 IP 请求上限，默认 120
+#   FORMORA_CORS_ORIGINS   允许的 CORS 来源，逗号分隔，默认 *
+#   TMPDIR                 应用临时目录（上传/中间文件），挂载到数据卷持久化
+# =============================================================
+services:
+  formora-api:
+    build: .
+    image: formora-api:latest
+    container_name: formora-api
+    restart: unless-stopped
+
+    # 宿主机端口 8000 -> 容器 8000
+    ports:
+      - "8000:8000"
+
+    environment:
+      # 生产环境请改为强随机值，例如: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      FORMORA_API_KEY: "change-me-to-a-long-random-secret"
+      FORMORA_MAX_UPLOAD_MB: "20"
+      FORMORA_FILE_TTL_HOURS: "1"
+      FORMORA_MAX_CACHED_FILES: "1000"
+      FORMORA_RATE_LIMIT: "120"
+      FORMORA_CORS_ORIGINS: "*"
+      TMPDIR: "/data/tmp"
+
+    # 数据目录（上传/生成过程中的临时文件与字体缓存等）
+    volumes:
+      - formora_data:/data
+
+    # 健康检查与 Dockerfile 中一致
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3) or exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  formora_data:

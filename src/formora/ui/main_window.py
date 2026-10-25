@@ -215,6 +215,11 @@ class MainWindow(QMainWindow):
                 if root:
                     root.setStyleSheet("background: transparent;")
             fade_in(self, duration=220)
+        # 无障碍：窗口首次显示时把焦点放到当前导航按钮，键盘用户可直接用 Tab/方向键导航
+        if not self.focusWidget():
+            home_btn = self.nav_buttons.get("home")
+            if home_btn is not None:
+                home_btn.setFocus()
 
     # ---------- 导航与主题 ----------
 

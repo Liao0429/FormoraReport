@@ -49,7 +49,7 @@ DEFAULTS = {
     "theme": "light",
     "output_dir": str(OUTPUT_DEFAULT_DIR),
     "ai": {
-        "enabled": False,
+        "enabled": True,
         "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "api_key_enc": "",

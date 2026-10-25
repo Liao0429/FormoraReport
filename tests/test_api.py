@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,7 @@ def client():
     """每个测试独立状态：清空内存字典，避免顺序耦合。"""
     api._FILES.clear()
     api._TASKS.clear()
+    api._RATE_LIMITER.clear()
     return TestClient(app)
 
 
@@ -359,3 +361,201 @@ class TestAuth:
         r = client.get("/api/health")
         assert r.status_code == 200
         assert r.json()["auth_enabled"] is False
+
+class TestRateLimit:
+    def test_exceed_limit_returns_429(self, client: TestClient, monkeypatch):
+        """超过每 IP 限制后，后续请求返回 429 JSON。"""
+        import formora.api as api_mod
+
+        monkeypatch.setattr(api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=3))
+        url = "/api/mapping/auto?template_file_id=not_exist"
+        # 前 3 次未超限：端点正常处理（模板不存在返回 404）
+        for _ in range(3):
+            assert client.post(url).status_code == 404
+        r = client.post(url)
+        assert r.status_code == 429, r.text
+        assert r.headers["content-type"].startswith("application/json")
+        assert "detail" in r.json()
+
+    def test_health_exempt_from_rate_limit(self, client: TestClient, monkeypatch):
+        """限流器已满时，/api/health 仍可访问。"""
+        import formora.api as api_mod
+
+        monkeypatch.setattr(api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=1))
+        url = "/api/mapping/auto?template_file_id=not_exist"
+        assert client.post(url).status_code == 404  # 消耗唯一额度
+        assert client.post(url).status_code == 429  # 限流生效
+        r = client.get("/api/health")
+        assert r.status_code == 200  # 健康检查不受限
+
+    def test_rate_limit_env_override(self, monkeypatch):
+        """FORMORA_RATE_LIMIT 环境变量可覆盖默认值，非法值回退默认 120。"""
+        import formora.api as api_mod
+
+        monkeypatch.setenv("FORMORA_RATE_LIMIT", "7")
+        assert api_mod._rate_limit_from_env() == 7
+        monkeypatch.setenv("FORMORA_RATE_LIMIT", "abc")
+        assert api_mod._rate_limit_from_env() == 120
+
+
+class TestGenerateBatch:
+    """POST /api/report/generate_batch：批量生成、参数校验与鉴权。"""
+
+    @pytest.fixture()
+    def isolated_history(self, tmp_path, monkeypatch):
+        """把任务历史写入临时目录，避免批量生成污染真实用户数据。"""
+        import formora.services.history as history_mod
+
+        monkeypatch.setattr(history_mod, "HISTORY_PATH", tmp_path / "history.jsonl")
+
+    @staticmethod
+    def _batch_mappings() -> list[dict]:
+        return [
+            {
+                "template_field": "实验名称",
+                "source_type": "constant",
+                "constant_value": "批量实验",
+            },
+            {
+                "template_field": "姓名",
+                "source_type": "column",
+                "source_column": "项目",
+            },
+        ]
+
+    def test_generate_batch_success(
+        self, client: TestClient, template_fid: str, data_fid: str, isolated_history
+    ):
+        """JSON 模式：data_file_id + 常量/列映射，生成数据行数份报告。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={
+                "template_file_id": template_fid,
+                "data_file_id": data_fid,
+                "auto_chart": False,
+                "mappings": self._batch_mappings(),
+            },
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["generated"] == 4
+        assert data["failed"] == 0
+        assert len(data["files"]) == 4
+        assert data["errors"] == []
+        for item in data["files"]:
+            assert item["file_name"].endswith(".docx")
+            assert item["path"]
+            assert item["task_id"]
+            assert item["download_url"]
+            assert Path(item["path"]).exists()
+            dl = client.get(item["download_url"])
+            assert dl.status_code == 200
+            assert dl.content[:2] == b"PK"
+
+    def test_generate_batch_success_with_upload(
+        self, client: TestClient, template_fid: str, isolated_history
+    ):
+        """multipart 模式：直接上传数据文件 + mappings JSON 字符串。"""
+        with DATA.open("rb") as f:
+            r = client.post(
+                "/api/report/generate_batch",
+                data={
+                    "template_file_id": template_fid,
+                    "mappings": json.dumps(
+                        self._batch_mappings(), ensure_ascii=False
+                    ),
+                    "auto_chart": "false",
+                },
+                files={"file": ("数据.csv", f, "text/csv")},
+            )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["generated"] == 4
+        assert data["failed"] == 0
+        assert len(data["files"]) == 4
+
+    def test_generate_batch_missing_mappings(
+        self, client: TestClient, template_fid: str, data_fid: str
+    ):
+        """空映射 → 400。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={
+                "template_file_id": template_fid,
+                "data_file_id": data_fid,
+                "mappings": [],
+            },
+        )
+        assert r.status_code == 400
+        assert "mappings" in r.json()["detail"]
+
+    def test_generate_batch_missing_data(self, client: TestClient, template_fid: str):
+        """无数据文件（无 data_file_id 也无上传）→ 400。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={
+                "template_file_id": template_fid,
+                "mappings": self._batch_mappings(),
+            },
+        )
+        assert r.status_code == 400
+        assert "数据" in r.json()["detail"]
+
+    def test_generate_batch_missing_template(self, client: TestClient, data_fid: str):
+        """缺少 template_file_id → 400。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={"data_file_id": data_fid, "mappings": self._batch_mappings()},
+        )
+        assert r.status_code == 400
+
+    def test_generate_batch_bad_template(self, client: TestClient, data_fid: str):
+        """template_file_id 不存在 → 404。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={
+                "template_file_id": "not_exist",
+                "data_file_id": data_fid,
+                "mappings": self._batch_mappings(),
+            },
+        )
+        assert r.status_code == 404
+
+    def test_generate_batch_missing_column(
+        self, client: TestClient, template_fid: str, data_fid: str
+    ):
+        """映射列不存在于数据文件 → 400。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            json={
+                "template_file_id": template_fid,
+                "data_file_id": data_fid,
+                "mappings": [
+                    {
+                        "template_field": "实验名称",
+                        "source_type": "column",
+                        "source_column": "不存在的列",
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 400
+
+    def test_generate_batch_auth_required(self, monkeypatch, isolated_history):
+        """配置 FORMORA_API_KEY 后，无 token 返回 401；带 token 通过鉴权。"""
+        import formora.api as api_mod
+        from fastapi.testclient import TestClient as TC
+
+        monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
+        c = TC(app)
+        body = {"template_file_id": "x", "mappings": []}
+        r = c.post("/api/report/generate_batch", json=body)
+        assert r.status_code == 401
+        r2 = c.post(
+            "/api/report/generate_batch",
+            json=body,
+            headers={"Authorization": "Bearer test-key"},
+        )
+        # 鉴权通过后进入参数校验：空映射应返回 400 而非 401
+        assert r2.status_code == 400
+        assert "mappings" in r2.json()["detail"]

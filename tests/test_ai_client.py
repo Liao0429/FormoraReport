@@ -40,8 +40,10 @@ def _install_fake_urlopen(monkeypatch, payload: bytes, captured: dict | None = N
 
 
 class TestIsConfigured:
-    def test_not_configured_by_default(self, tmp_path):
+    def test_not_configured_without_key_or_url(self, tmp_path):
         cfg = Config(tmp_path / "config.json")
+        # 默认 ai.enabled=True（开关默认开），但缺少密钥与 API 地址时仍视为未配置
+        assert cfg.get("ai")["enabled"] is True
         assert not ai_client.is_configured(cfg)
 
     def test_configured_when_enabled_key_and_url(self, tmp_path, monkeypatch):
@@ -51,6 +53,14 @@ class TestIsConfigured:
         )
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         assert ai_client.is_configured(cfg)
+
+    def test_not_configured_when_disabled(self, tmp_path, monkeypatch):
+        cfg = Config(tmp_path / "config.json")
+        cfg.set(
+            "ai", {"enabled": False, "base_url": "https://example.com/v1", "model": "m"}
+        )
+        monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
+        assert not ai_client.is_configured(cfg)
 
 
 class TestPostChat:
@@ -166,3 +176,41 @@ class TestReviewReport:
         issues = ai_client.review_report(cfg, "报告文本")
         assert issues[0]["field"] == "实验结论"
         assert issues[0]["severity"] == "error"
+
+class TestPrivacySwitch:
+    """隐私开关：ai.enabled=False 时，即使已配置完整也绝不上传数据。"""
+
+    @staticmethod
+    def _disabled_cfg(tmp_path, monkeypatch) -> Config:
+        cfg = Config(tmp_path / "config.json")
+        cfg.set(
+            "ai",
+            {"enabled": False, "base_url": "https://example.com/v1", "model": "m"},
+        )
+        monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
+        return cfg
+
+    @staticmethod
+    def _forbid_network(monkeypatch):
+        def _forbid(req, timeout=60):
+            raise AssertionError("隐私开关关闭时不应发起网络请求")
+
+        monkeypatch.setattr("urllib.request.urlopen", _forbid)
+
+    def test_extract_fields_raises_without_network(self, tmp_path, monkeypatch):
+        cfg = self._disabled_cfg(tmp_path, monkeypatch)
+        self._forbid_network(monkeypatch)
+        with pytest.raises(ExternalDependencyError, match="关闭"):
+            ai_client.extract_fields(cfg, "素材", ["实验名称"])
+
+    def test_review_report_raises_without_network(self, tmp_path, monkeypatch):
+        cfg = self._disabled_cfg(tmp_path, monkeypatch)
+        self._forbid_network(monkeypatch)
+        with pytest.raises(ExternalDependencyError, match="关闭"):
+            ai_client.review_report(cfg, "报告文本")
+
+    def test_chat_json_raises_when_disabled(self, tmp_path, monkeypatch):
+        cfg = self._disabled_cfg(tmp_path, monkeypatch)
+        self._forbid_network(monkeypatch)
+        with pytest.raises(ExternalDependencyError, match="关闭"):
+            ai_client._chat_json(cfg, [{"role": "user", "content": "x"}])

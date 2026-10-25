@@ -12,8 +12,8 @@ from formora.services.config import DEFAULTS, Config, ensure_dirs
 class TestDefaultsIsolation:
     def test_mutating_config_does_not_mutate_defaults(self, tmp_path):
         c = Config(tmp_path / "config.json")
-        c.get("ai")["enabled"] = True
-        assert DEFAULTS["ai"]["enabled"] is False
+        c.get("ai")["enabled"] = False
+        assert DEFAULTS["ai"]["enabled"] is True
 
     def test_defaults_are_deep_copied(self, tmp_path):
         c1 = Config(tmp_path / "config.json")

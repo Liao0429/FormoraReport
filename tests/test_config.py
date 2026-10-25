@@ -38,3 +38,10 @@ def test_empty_key_returns_empty():
     c = Config(tmp)
     c.set_ai_api_key("")
     assert c.get_ai_api_key() == ""
+
+
+def test_ai_enabled_default_true():
+    """数据隐私开关：ai.enabled 默认开启，关闭后由设置页写入 False。"""
+    tmp = Path(tempfile.mkdtemp()) / "config.json"
+    c = Config(tmp)
+    assert c.get("ai")["enabled"] is True

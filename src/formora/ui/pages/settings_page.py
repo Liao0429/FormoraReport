@@ -83,14 +83,15 @@ class SettingsPage(QWidget):
         # AI 设置
         ai_card = Card("AI 智能模式（可选）")
         ai_hint = hint_label(
-            "AI 模式是可选增强，需你主动启用。启用后，生成内容会调用你配置的模型；"
-            "密钥不明文落盘、不进日志，但会作为认证凭据随每个 AI 请求发送到你配置的 API 服务器。"
-            "AI 不会在后台静默上传文档。"
+            "AI 辅助是可选增强，默认开启。关闭「启用 AI 辅助」后，不会上传任何数据；"
+            "启用后，生成内容会调用你配置的模型。密钥不明文落盘、不进日志，但会作为认证凭据"
+            "随每个 AI 请求发送到你配置的 API 服务器。AI 不会在后台静默上传文档。"
         )
         ai_card.add_widget(ai_hint)
         ai_form = QFormLayout()
-        self.ai_enabled = QCheckBox("启用 AI 智能模式")
+        self.ai_enabled = QCheckBox("启用 AI 辅助")
         ai_form.addRow("", self.ai_enabled)
+        self.ai_enabled.toggled.connect(self._on_ai_enabled_toggled)
         self.ai_base = QLineEdit()
         self.ai_base.setPlaceholderText("https://api.openai.com/v1")
         ai_form.addRow("API 地址", self.ai_base)
@@ -122,7 +123,7 @@ class SettingsPage(QWidget):
         privacy = Card("隐私与数据")
         privacy.add_widget(
             hint_label(
-                "· 无 AI 模式下所有文件都在本机处理，不联网。\n"
+                "· 关闭「启用 AI 辅助」后，所有文件都在本机处理，不联网，不上传任何数据。\n"
                 "· AI 模式下，仅在你点击生成/审查时发送必要内容到所配置的 API。\n"
                 "· API 密钥用 Windows DPAPI 加密存储，不明文落盘。\n"
                 "· 日志仅记录操作摘要，不包含文档正文与密钥。"
@@ -139,12 +140,24 @@ class SettingsPage(QWidget):
         self.outdir_edit.setText(cfg.get("output_dir") or "")
         ai = cfg.get("ai", {}) or {}
         self.ai_enabled.setChecked(bool(ai.get("enabled")))
+        self._on_ai_enabled_toggled(self.ai_enabled.isChecked())
         self.ai_base.setText(ai.get("base_url") or "")
         self.ai_model.setText(ai.get("model") or "")
         temp = ai.get("temperature", 0.2)
         if temp is None:
             temp = 0.2
         self.ai_temp.setValue(int(round(float(temp) * 100)))
+
+    def _on_ai_enabled_toggled(self, checked: bool):
+        """隐私开关：关闭 AI 辅助后禁用 AI 配置输入，确保不会上传任何数据。"""
+        for w in (
+            self.ai_base,
+            self.ai_model,
+            self.ai_key,
+            self.ai_temp,
+            self.test_btn,
+        ):
+            w.setEnabled(checked)
 
     def _save(self):
         cfg = self.state.config

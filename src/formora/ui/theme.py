@@ -56,10 +56,12 @@ QFrame#Sidebar {{
 QLabel#AppTitle {{ font-size: 17px; font-weight: 700; color: {_L_TEXT}; }}
 QLabel#WindowTitle {{ font-size: 13px; font-weight: 600; color: {_L_TEXT_SUB}; }}
 QPushButton#NavButton {{
-    background: transparent; border: none; border-radius: 11px;
-    padding: 10px 14px; text-align: left; color: {_L_TEXT_SUB}; font-size: 14px;
+    background: transparent; border: 1px solid transparent; border-radius: 11px;
+    padding: 9px 13px; text-align: left; color: {_L_TEXT_SUB}; font-size: 14px;
 }}
 QPushButton#NavButton:hover {{ background: rgba(255,255,255,0.6); color: {_L_TEXT}; }}
+QPushButton#NavButton:focus {{ border: 1px solid {_L_ACCENT}; }}
+QPushButton#NavButton:checked:focus {{ border: 1px solid rgba(255,255,255,0.95); }}
 QPushButton#NavButton:checked {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 {_L_ACCENT_TOP}, stop:1 {_L_ACCENT_BOTTOM});
@@ -81,6 +83,15 @@ QPushButton#PrimaryButton {{
 QPushButton#PrimaryButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
     stop:0 #6a95ff, stop:1 #4a74f0); }}
 QPushButton#PrimaryButton:pressed {{ background: {_L_ACCENT_BOTTOM}; }}
+QPushButton#PrimaryButton:focus {{
+    border: 2px solid rgba(255,255,255,0.95);
+    padding: 8px 17px;
+}}
+QPushButton#PrimaryButton:disabled {{
+    background: rgba(150,160,175,0.45);
+    color: rgba(255,255,255,0.75);
+    border: 1px solid rgba(150,160,175,0.3);
+}}
 QPushButton#SecondaryButton {{
     background: rgba(255,255,255,0.55); color: {_L_TEXT};
     border: 1px solid rgba(255,255,255,0.8);
@@ -88,22 +99,38 @@ QPushButton#SecondaryButton {{
 }}
 QPushButton#SecondaryButton:hover {{ background: rgba(255,255,255,0.85); }}
 QPushButton#SecondaryButton:pressed {{ background: rgba(255,255,255,0.95); }}
+QPushButton#SecondaryButton:focus {{
+    border: 2px solid {_L_ACCENT};
+    padding: 7px 15px;
+    background: rgba(255,255,255,0.85);
+}}
+QPushButton#SecondaryButton:disabled {{
+    background: rgba(150,160,175,0.2);
+    color: rgba(120,130,145,0.8);
+    border: 1px solid rgba(150,160,175,0.25);
+}}
 QPushButton#WinButton {{
-    background: transparent; border: none; border-radius: 8px;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
     font-size: 14px; color: {_L_TEXT_SUB}; min-width: 40px; max-width: 40px;
-    padding: 6px 0;
+    padding: 5px 0;
 }}
 QPushButton#WinButton:hover {{ background: rgba(0,0,0,0.08); }}
+QPushButton#WinButton:focus {{ border: 1px solid {_L_ACCENT}; background: rgba(0,0,0,0.06); }}
 QPushButton#WinButton#WinClose:hover {{ background: #e81123; color: white; }}
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {{
     background: {_L_INPUT}; border: 1px solid rgba(210,218,230,0.9);
     border-radius: 12px; padding: 7px 10px; color: {_L_TEXT};
     selection-background-color: {_L_ACCENT}; selection-color: white;
 }}
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
     border: 1px solid {_L_ACCENT};
     background: rgba(255,255,255,0.75);
 }}
+QLineEdit:read-only, QPlainTextEdit:read-only, QTextEdit:read-only {{
+    background: rgba(255,255,255,0.3);
+    color: {_L_TEXT};
+}}
+QCheckBox:focus {{ color: {_L_ACCENT}; }}
 QTableWidget {{
     background: rgba(255,255,255,0.4); border: 1px solid rgba(210,218,230,0.7);
     border-radius: 14px; gridline-color: rgba(210,218,230,0.5);
@@ -127,6 +154,23 @@ QStatusBar {{ background: transparent; color: {_L_TEXT_HINT}; }}
 QLabel#LogText {{ color: {_L_TEXT_SUB}; }}
 QLabel#HintText {{ color: {_L_TEXT_HINT}; font-size: 12px; }}
 QMessageBox {{ background: #f5f7fb; }}
+QMessageBox QPushButton {{
+    background: rgba(255,255,255,0.7);
+    color: {_L_TEXT};
+    border: 1px solid rgba(210,218,230,0.9);
+    border-radius: 8px;
+    padding: 6px 18px;
+    min-width: 64px;
+}}
+QMessageBox QPushButton:hover {{ background: rgba(255,255,255,0.95); }}
+QMessageBox QPushButton:pressed {{ background: rgba(255,255,255,1); }}
+QMessageBox QPushButton:default {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_L_ACCENT_TOP}, stop:1 {_L_ACCENT_BOTTOM});
+    color: white;
+    border: 1px solid rgba(255,255,255,0.35);
+}}
+QMessageBox QPushButton:focus {{ border: 1px solid {_L_ACCENT}; }}
 """
 
 
@@ -145,10 +189,12 @@ QFrame#Sidebar {{
 QLabel#AppTitle {{ font-size: 17px; font-weight: 700; color: {_D_TEXT}; }}
 QLabel#WindowTitle {{ font-size: 13px; font-weight: 600; color: {_D_TEXT_SUB}; }}
 QPushButton#NavButton {{
-    background: transparent; border: none; border-radius: 11px;
-    padding: 10px 14px; text-align: left; color: {_D_TEXT_SUB}; font-size: 14px;
+    background: transparent; border: 1px solid transparent; border-radius: 11px;
+    padding: 9px 13px; text-align: left; color: {_D_TEXT_SUB}; font-size: 14px;
 }}
 QPushButton#NavButton:hover {{ background: rgba(255,255,255,0.08); color: {_D_TEXT}; }}
+QPushButton#NavButton:focus {{ border: 1px solid #7ba4ff; }}
+QPushButton#NavButton:checked:focus {{ border: 1px solid rgba(255,255,255,0.95); }}
 QPushButton#NavButton:checked {{
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 {_D_ACCENT_TOP}, stop:1 {_D_ACCENT_BOTTOM});
@@ -170,6 +216,15 @@ QPushButton#PrimaryButton {{
 QPushButton#PrimaryButton:hover {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
     stop:0 #6a95ff, stop:1 #4a74f0); }}
 QPushButton#PrimaryButton:pressed {{ background: {_D_ACCENT_BOTTOM}; }}
+QPushButton#PrimaryButton:focus {{
+    border: 2px solid rgba(255,255,255,0.95);
+    padding: 8px 17px;
+}}
+QPushButton#PrimaryButton:disabled {{
+    background: rgba(120,130,150,0.35);
+    color: rgba(230,234,242,0.4);
+    border: 1px solid rgba(255,255,255,0.12);
+}}
 QPushButton#SecondaryButton {{
     background: rgba(255,255,255,0.08); color: {_D_TEXT};
     border: 1px solid rgba(255,255,255,0.16);
@@ -177,22 +232,38 @@ QPushButton#SecondaryButton {{
 }}
 QPushButton#SecondaryButton:hover {{ background: rgba(255,255,255,0.16); }}
 QPushButton#SecondaryButton:pressed {{ background: rgba(255,255,255,0.22); }}
+QPushButton#SecondaryButton:focus {{
+    border: 2px solid #7ba4ff;
+    padding: 7px 15px;
+    background: rgba(255,255,255,0.16);
+}}
+QPushButton#SecondaryButton:disabled {{
+    background: rgba(255,255,255,0.05);
+    color: rgba(170,182,200,0.45);
+    border: 1px solid rgba(255,255,255,0.1);
+}}
 QPushButton#WinButton {{
-    background: transparent; border: none; border-radius: 8px;
+    background: transparent; border: 1px solid transparent; border-radius: 8px;
     font-size: 14px; color: {_D_TEXT_SUB}; min-width: 40px; max-width: 40px;
-    padding: 6px 0;
+    padding: 5px 0;
 }}
 QPushButton#WinButton:hover {{ background: rgba(255,255,255,0.12); }}
+QPushButton#WinButton:focus {{ border: 1px solid #7ba4ff; background: rgba(255,255,255,0.08); }}
 QPushButton#WinButton#WinClose:hover {{ background: #e81123; color: white; }}
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {{
     background: {_D_INPUT}; border: 1px solid rgba(255,255,255,0.14);
     border-radius: 12px; padding: 7px 10px; color: {_D_TEXT};
     selection-background-color: {_D_ACCENT}; selection-color: white;
 }}
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {{
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
     border: 1px solid {_D_ACCENT};
     background: rgba(255,255,255,0.12);
 }}
+QLineEdit:read-only, QPlainTextEdit:read-only, QTextEdit:read-only {{
+    background: rgba(255,255,255,0.04);
+    color: {_D_TEXT};
+}}
+QCheckBox:focus {{ color: #7ba4ff; }}
 QTableWidget {{
     background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
     border-radius: 14px; gridline-color: rgba(255,255,255,0.08);
@@ -243,6 +314,7 @@ QMessageBox QPushButton:default {{
     color: white;
     border: 1px solid rgba(255,255,255,0.3);
 }}
+QMessageBox QPushButton:focus {{ border: 1px solid #7ba4ff; background: rgba(255,255,255,0.22); }}
 """
 
 

@@ -144,6 +144,7 @@ class MappingPage(QWidget):
         result_card = Card("校验结果")
         self.issues_text = QPlainTextEdit()
         self.issues_text.setReadOnly(True)
+        self.issues_text.setTabChangesFocus(True)
         self.issues_text.setMaximumHeight(160)
         result_card.add_widget(self.issues_text)
         lay.addWidget(result_card)

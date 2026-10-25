@@ -14,18 +14,22 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
+import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field, ValidationError
 
 import formora
 from formora.core import data_reader, generator, mapper, pdf_exporter, template_parser
@@ -35,7 +39,7 @@ from formora.core.errors import (
     FormoraError,
     UserError,
 )
-from formora.core.models import FieldMapping, FieldSourceType
+from formora.core.models import FieldMapping, FieldSourceType, ReportTask
 from formora.services.report_reader import extract_report_text
 
 logger = logging.getLogger("formora.api")
@@ -52,11 +56,103 @@ _CORS_ORIGINS = [
     if o.strip()
 ]
 
+# ---------- 限流 ----------
+
+
+def _rate_limit_from_env() -> int:
+    """读取 FORMORA_RATE_LIMIT（每分钟每 IP 请求上限），非法值回退默认 120。"""
+    try:
+        return max(1, int(os.environ.get("FORMORA_RATE_LIMIT", "120")))
+    except ValueError:
+        logger.warning("FORMORA_RATE_LIMIT 不是合法整数，使用默认值 120")
+        return 120
+
+
+RATE_LIMIT_PER_MINUTE = _rate_limit_from_env()
+RATE_LIMIT_WINDOW_SECONDS = 60.0
+
+
+class _RateLimiter:
+    """线程安全的内存滑动窗口限流器：按 client IP 记录窗口内请求时间戳。
+
+    仅适用于单进程部署（多 worker 时各进程独立计数）；生产环境可替换为 Redis 等共享存储。
+    """
+
+    def __init__(
+        self, max_requests: int, window_seconds: float = RATE_LIMIT_WINDOW_SECONDS
+    ):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._hits: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+        self._max_keys = 10_000
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        """为 key 记录一次请求；未超限返回 True，超限返回 False（超限请求不计入窗口）。"""
+        now = time.time() if now is None else now
+        cutoff = now - self.window_seconds
+        with self._lock:
+            if len(self._hits) >= self._max_keys:
+                self._prune(now)
+            timestamps = self._hits.get(key)
+            if timestamps is None:
+                self._hits[key] = deque([now])
+                return True
+            while timestamps and timestamps[0] <= cutoff:
+                timestamps.popleft()
+            if len(timestamps) >= self.max_requests:
+                return False
+            timestamps.append(now)
+            return True
+
+    def _prune(self, now: float) -> None:
+        """清理窗口已完全滑出的 key，防止字典无限增长。"""
+        cutoff = now - self.window_seconds
+        stale = [k for k, ts in self._hits.items() if not ts or ts[-1] <= cutoff]
+        for k in stale:
+            del self._hits[k]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._hits.clear()
+
+
+class RateLimitMiddleware:
+    """基础限流中间件：除 /api/health 外，每 client IP 每分钟最多 RATE_LIMIT_PER_MINUTE 次请求。"""
+
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = scope.get("path", "")
+        if path == "/api/health" or path.startswith("/api/health/"):
+            await self.app(scope, receive, send)
+            return
+        client = scope.get("client")
+        key = client[0] if client else "unknown"
+        if not _RATE_LIMITER.allow(key):
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "请求过于频繁，请稍后重试"},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+_RATE_LIMITER = _RateLimiter(RATE_LIMIT_PER_MINUTE)
+
 app = FastAPI(
     title="FormoraReport API",
     description="实验报告自动生成引擎 REST 接口",
     version=formora.__version__,
 )
+
+# 限流中间件注册在 CORS 之前：CORS 最外层处理预检，429 响应同样带 CORS 头
+app.add_middleware(RateLimitMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -172,6 +268,15 @@ class GenerateRequest(BaseModel):
     image_vars: dict[str, str] = Field(default_factory=dict)  # 占位符 -> 图片 file_id
 
 
+class GenerateBatchRequest(BaseModel):
+    """批量生成请求（JSON 模式；multipart 模式的解析见 generate_batch 端点）。"""
+
+    template_file_id: str
+    mappings: list[MappingItem] = Field(default_factory=list)
+    data_file_id: str | None = None
+    auto_chart: bool | None = None  # 是否自动生成图表；None 表示用服务默认值
+
+
 class PdfRequest(BaseModel):
     task_id: str  # 已生成报告的 task_id
 
@@ -264,6 +369,7 @@ def health() -> dict:
         "files_cached": len(_FILES),
         "tasks": len(_TASKS),
         "auth_enabled": bool(_API_KEY),
+        "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
     }
 
 
@@ -448,6 +554,185 @@ async def generate_report(
     return {
         "task_id": task_id,
         "download_url": f"/api/report/{task_id}/download",
+    }
+
+
+@app.post("/api/report/generate_batch")
+async def generate_batch(
+    request: Request,
+    _auth: None = Depends(_verify_api_key),
+) -> dict:
+    """批量生成多份 DOCX（同步版）。
+
+    请求支持两种格式：
+    - JSON：{"template_file_id", "data_file_id", "mappings": [...], "auto_chart": bool}
+    - multipart/form-data：template_file_id + mappings(JSON 数组字符串) +
+      file(数据文件上传)，可选 data_file_id / auto_chart。
+
+    返回每份生成文件的 file_name / path / task_id / download_url，以及失败信息列表。
+
+    注意：批量生成是耗时操作（每份报告都要重新解析模板并渲染 DOCX）。当前为同步实现，
+    请求会阻塞直到全部生成完成，适合单机/内网调用与批量份数较少（如课程报告）的场景。
+
+    【后续方案：异步任务队列】
+    若批量份数大或并发高，应改为异步：
+    1. 本端点仅校验参数并创建批量任务记录，返回 batch_id（202 Accepted）；
+    2. 后台 worker（Celery / RQ，或 FastAPI BackgroundTasks + 线程池）消费队列，
+       逐行调用 report_service.generate_batch 并更新任务状态与进度；
+    3. 客户端通过 GET /api/report/batch/{batch_id} 轮询状态，完成后获取文件列表；
+    4. 文件与任务记录沿用现有 _TASKS TTL 清理机制，超时未查询自动回收。
+    """
+    # ---- 解析请求体（JSON 或 multipart） ----
+    content_type = request.headers.get("content-type", "")
+    is_form = content_type.startswith("multipart/form-data") or content_type.startswith(
+        "application/x-www-form-urlencoded"
+    )
+    req: GenerateBatchRequest
+    if is_form:
+        form = await request.form()
+        template_file_id = str(form.get("template_file_id") or "").strip()
+        mappings_raw = form.get("mappings") or "[]"
+        try:
+            mappings_data = json.loads(mappings_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组字符串")
+        if not isinstance(mappings_data, list):
+            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组")
+        auto_chart_raw = form.get("auto_chart")
+        auto_chart = None
+        if auto_chart_raw is not None:
+            auto_chart = str(auto_chart_raw).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            req = GenerateBatchRequest(
+                template_file_id=template_file_id,
+                mappings=[MappingItem(**m) for m in mappings_data],
+                data_file_id=str(form.get("data_file_id") or "").strip() or None,
+                auto_chart=auto_chart,
+            )
+        except (ValidationError, TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"mappings 格式错误: {e}")
+        uploaded = form.get("file")
+        if uploaded is not None and getattr(uploaded, "filename", None):
+            if req.data_file_id:
+                raise HTTPException(
+                    status_code=400, detail="不能同时提供 data_file_id 与文件上传"
+                )
+            req.data_file_id = _save_upload(uploaded, "data")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="请求体必须是合法 JSON")
+        try:
+            req = GenerateBatchRequest.model_validate(body)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"请求参数错误: {e}")
+
+    # ---- 参数校验 ----
+    if not req.template_file_id:
+        raise HTTPException(status_code=400, detail="缺少 template_file_id")
+    if not req.mappings:
+        raise HTTPException(status_code=400, detail="映射列表 mappings 不能为空")
+    if not req.data_file_id:
+        raise HTTPException(
+            status_code=400, detail="缺少数据文件（请提供 data_file_id 或上传数据文件）"
+        )
+
+    # ---- 模板与数据 ----
+    try:
+        tpl_path = _get_file(req.template_file_id)
+        info = template_parser.parse_template(tpl_path)
+        ds = data_reader.read_data(_get_file(req.data_file_id))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _handle_error(e)
+
+    if not ds.is_tabular or not ds.rows:
+        raise HTTPException(
+            status_code=400, detail="数据文件为空或无表格数据，无法批量生成"
+        )
+
+    # 列映射校验：避免静默填空
+    missing_cols = [
+        m.source_column
+        for m in req.mappings
+        if m.source_type == "column"
+        and m.source_column
+        and m.source_column not in ds.columns
+    ]
+    if missing_cols:
+        raise HTTPException(
+            status_code=400,
+            detail=f"映射的列不存在于数据文件: {', '.join(sorted(set(missing_cols)))}",
+        )
+
+    # 构造 FieldMapping 列表（图片 file_id -> 本地路径）
+    mappings: list[FieldMapping] = []
+    for item in req.mappings:
+        value = item.value
+        if item.source_type == "image" and value:
+            value = str(_get_file(value))
+        mappings.append(
+            FieldMapping(
+                template_field=item.template_field,
+                source_type=item.source_type,
+                source_column=item.source_column,
+                constant_value=item.constant_value,
+                value=value,
+            )
+        )
+
+    # ---- 复用 report_service.generate_batch（同步执行） ----
+    from formora.services.config import Config
+    from formora.services.report_service import generate_batch as service_generate_batch
+
+    task = ReportTask(
+        name="批量报告",
+        template_path=tpl_path,
+        data_source=ds,
+        mappings=mappings,
+        status="generating",
+        created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    # 隔离配置：输出到 API 工作目录（随 _TASKS TTL 清理），避免写入用户 Documents
+    cfg = Config(_WORK_DIR / "config.json")
+    cfg.set("output_dir", str(_WORK_DIR / "batch_output"))
+    if req.auto_chart is not None:
+        cfg.set("auto_chart", req.auto_chart)
+    state = SimpleNamespace(
+        config=cfg,
+        template=info,
+        data=ds,
+        mappings=mappings,
+        task=task,
+    )
+
+    try:
+        results, errors = service_generate_batch(state)
+    except Exception as e:
+        raise _handle_error(e)
+
+    # ---- 注册每个生成文件为可下载任务 ----
+    files: list[dict] = []
+    for path_str in results:
+        out = Path(path_str)
+        task_id = _register_task(out, "docx")
+        files.append(
+            {
+                "file_name": out.name,
+                "path": str(out),
+                "task_id": task_id,
+                "download_url": f"/api/report/{task_id}/download",
+            }
+        )
+
+    return {
+        "total": len(files) + len(errors),
+        "generated": len(files),
+        "failed": len(errors),
+        "files": files,
+        "errors": errors,
     }
 
 

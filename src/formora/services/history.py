@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from formora.core.models import ReportTask
 
@@ -42,6 +43,13 @@ def _data_source_str(ds) -> str | None:
     return str(ds)
 
 
+def _json_safe(value):
+    """把 Path 等非 JSON 原生类型转成可序列化值，避免落盘失败。"""
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
 def record_task(task: ReportTask):
     entry = {
         "id": task.id,
@@ -54,6 +62,20 @@ def record_task(task: ReportTask):
         "logs": [
             {"level": l.level, "category": l.category, "message": l.message}
             for l in task.logs
+        ],
+        # 完整映射：供「最近任务」点击恢复时还原映射，继续编辑/生成
+        "mappings": [
+            {
+                "template_field": m.template_field,
+                "source_type": m.source_type,
+                "source_column": m.source_column,
+                "constant_value": m.constant_value,
+                "value": _json_safe(m.value),
+                "required": m.required,
+                "source": m.source,
+                "needs_confirmation": m.needs_confirmation,
+            }
+            for m in task.mappings
         ],
         # AI 来源追踪：仅记录含依据或需确认的字段，便于事后核对
         "ai_sources": [
@@ -93,6 +115,26 @@ def load_history(limit: int = 50) -> list[dict]:
                 logger.warning("历史记录第 %d 行无法解析，已跳过", len(entries) + 1)
                 continue
     return entries[-limit:][::-1]  # 最新在前
+
+
+def get_task(task_id: str) -> dict | None:
+    """按 id 读取单条历史记录（供界面恢复任务使用）；不存在返回 None。"""
+    if not task_id:
+        return None
+    if not HISTORY_PATH.exists():
+        return None
+    with _lock:
+        for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if entry.get("id") == task_id:
+                return entry
+    return None
 
 
 def now_str() -> str:

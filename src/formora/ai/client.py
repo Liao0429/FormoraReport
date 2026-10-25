@@ -238,6 +238,10 @@ def _parse_model_json(content) -> dict | list:
 
 def _chat_json(config: Config, messages: list[dict], temperature: float = 0.2) -> dict:
     ai = config.get("ai", {})
+    if not ai.get("enabled"):
+        raise ExternalDependencyError(
+            "AI 辅助已关闭：当前不会上传任何数据。如需使用，请在「设置」中启用 AI 辅助。"
+        )
     base_url = (ai.get("base_url") or "").rstrip("/")
     model = ai.get("model") or ""
     api_key = config.get_ai_api_key()
@@ -275,6 +279,11 @@ def extract_fields(
 ) -> list[dict]:
     """从素材中抽取模板字段内容。返回 [{field, value, source, needs_confirmation}]"""
     if not is_configured(config):
+        ai = config.get("ai", {}) or {}
+        if not ai.get("enabled"):
+            raise ExternalDependencyError(
+                "AI 辅助已关闭：当前不会上传任何数据。如需使用，请在「设置」中启用 AI 辅助。"
+            )
         raise ExternalDependencyError("AI 模式未启用或未配置，请先在 AI 设置中配置。")
     user_msg = (
         f"模板字段：{json.dumps(template_fields, ensure_ascii=False)}\n\n"
@@ -295,6 +304,11 @@ def extract_fields(
 def review_report(config: Config, report_text: str) -> list[dict]:
     """审查报告内容，检查缺失、矛盾、疑似捏造。返回 [{field, issue, severity}]"""
     if not is_configured(config):
+        ai = config.get("ai", {}) or {}
+        if not ai.get("enabled"):
+            raise ExternalDependencyError(
+                "AI 辅助已关闭：当前不会上传任何数据。如需使用，请在「设置」中启用 AI 辅助。"
+            )
         raise ExternalDependencyError("AI 模式未启用或未配置，请先在 AI 设置中配置。")
     user_msg = (
         "请审查以下实验报告。检查：缺失字段、前后矛盾、疑似无依据的数据。\n"
