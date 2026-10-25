@@ -262,3 +262,115 @@ class TestPath:
         assert cache.path == p
         cache.set("k", 1)
         assert p.exists()
+
+    def test_constructor_uses_env_default(self, monkeypatch, tmp_path):
+        p = tmp_path / "env_cache.json"
+        monkeypatch.setenv("FORMORA_AI_CACHE_PATH", str(p))
+        cache = AICache()
+        assert cache.path == p
+
+
+# --------------------------------------------------------------------------- #
+# contains / 键校验
+# --------------------------------------------------------------------------- #
+class TestContainsAndKeyValidation:
+    def test_contains(self, tmp_path):
+        cache = AICache(tmp_path / "cache.json")
+        assert cache.contains("k") is False
+        cache.set("k", {"v": 1})
+        assert cache.contains("k") is True
+        assert cache.contains("other") is False
+
+    def test_validate_key_raises(self, tmp_path):
+        cache = AICache(tmp_path / "cache.json")
+        with pytest.raises(ValueError):
+            cache.get("")
+        with pytest.raises(ValueError):
+            cache.get(None)
+        with pytest.raises(ValueError):
+            cache.set(123, {"v": 1})
+        with pytest.raises(ValueError):
+            cache.contains("")
+        with pytest.raises(ValueError):
+            cache.get_or_set("", lambda: 1)
+
+
+# --------------------------------------------------------------------------- #
+# clear(keep_stats)：是否保留命中率统计
+# --------------------------------------------------------------------------- #
+class TestClearKeepStats:
+    def test_clear_keep_stats_false_resets_counts(self, tmp_path):
+        cache = AICache(tmp_path / "cache.json")
+        cache.get("m")          # miss
+        cache.set("k", 1)
+        cache.get("k")          # hit
+        assert cache.stats()["hits"] == 1
+        assert cache.stats()["misses"] == 1
+        assert cache.stats()["size"] == 1
+        cache.clear(keep_stats=False)
+        s = cache.stats()
+        assert s["hits"] == 0
+        assert s["misses"] == 0
+        assert s["size"] == 0
+
+    def test_clear_keep_stats_true_preserves_counts(self, tmp_path):
+        cache = AICache(tmp_path / "cache.json")
+        cache.get("m")
+        cache.set("k", 1)
+        cache.get("k")
+        cache.clear(keep_stats=True)
+        s = cache.stats()
+        assert s["hits"] == 1
+        assert s["misses"] == 1
+        assert s["size"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# 加载边界：非 dict 根 / 缺 stats、entries / 统计值类型错误
+# --------------------------------------------------------------------------- #
+class TestLoadEdgeCases:
+    def test_load_non_dict_root(self, tmp_path):
+        p = tmp_path / "cache.json"
+        _write(p, json.dumps(["not", "a", "dict"]))
+        cache = AICache(p)
+        assert cache.stats() == {"hits": 0, "misses": 0, "total": 0, "size": 0}
+        assert cache.get("k") is None
+
+    def test_load_missing_stats_entries(self, tmp_path):
+        p = tmp_path / "cache.json"
+        _write(p, json.dumps({"version": 1}))
+        cache = AICache(p)
+        assert cache.stats() == {"hits": 0, "misses": 0, "total": 0, "size": 0}
+        assert cache.get("k") is None
+
+    def test_stats_bad_type(self, tmp_path):
+        p = tmp_path / "cache.json"
+        _write(
+            p,
+            json.dumps(
+                {
+                    "version": 1,
+                    "stats": {"hits": "x", "misses": "y"},
+                    "entries": {"k": {"result": 1, "created_at": 1.0}},
+                }
+            ),
+        )
+        cache = AICache(p)
+        assert cache.stats()["hits"] == 0
+        assert cache.stats()["misses"] == 0
+        assert cache.get("k") == 1  # 条目本身仍可用
+
+
+# --------------------------------------------------------------------------- #
+# 保存失败降级：磁盘错误不影响内存缓存
+# --------------------------------------------------------------------------- #
+class TestSaveFailure:
+    def test_save_mkdir_failure(self, tmp_path, monkeypatch):
+        cache = AICache(tmp_path / "cache.json")
+
+        def boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "mkdir", boom)
+        cache.set("k", {"v": 1})  # 不应抛异常
+        assert cache.get("k") == {"v": 1}  # 内存仍可读

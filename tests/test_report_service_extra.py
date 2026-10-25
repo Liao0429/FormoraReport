@@ -14,7 +14,10 @@ from formora.services.report_service import (
     _drop_uncovered_image_fields,
     _format_rows,
     _output_dir,
+    _versioned_output,
+    auto_chart,
     batch_export_pdf,
+    collect_image_vars,
     generate_batch,
     generate_single,
     image_placeholders,
@@ -296,3 +299,250 @@ class TestBatchExportPdf:
         with pytest.raises(BatchExportCancelledError):
             batch_export_pdf(files, should_cancel=lambda: len(calls) >= 1)
         assert len(calls) == 1  # 只转换了第一份就协作式取消
+
+
+class TestAutoChartFailure:
+    def test_auto_chart_failure_logs_and_returns_none(
+        self, tmp_path, monkeypatch, caplog, make_config
+    ):
+        """图表生成异常时返回 None，并记录任务 warning 与 logger 警告。"""
+        import logging
+
+        from formora.core import chart
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["项目", "数值"],
+            rows=[{"项目": "A", "数值": 1.0}, {"项目": "B", "数值": 2.0}],
+        )
+        task = ReportTask(name="图表失败", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "data": data, "task": task})()
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("绘图引擎崩溃")
+
+        monkeypatch.setattr(chart, "generate_line_chart", boom)
+        with caplog.at_level(logging.WARNING, logger="formora"):
+            img = auto_chart(state)
+        assert img is None
+        assert any(
+            entry.level == "warning" and "自动图表生成失败" in entry.message
+            for entry in task.logs
+        )
+        assert "自动图表生成失败" in caplog.text
+
+
+class TestAutoChartNoNumericCols:
+    def test_auto_chart_no_numeric_cols(self, tmp_path, monkeypatch, make_config):
+        """数据列全为文本时自动图表返回 None。"""
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["项目", "备注"],
+            rows=[
+                {"项目": "A", "备注": "文本一"},
+                {"项目": "B", "备注": "文本二"},
+            ],
+        )
+        task = ReportTask(name="全文本", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "data": data, "task": task})()
+        assert auto_chart(state) is None
+
+    def test_auto_chart_none_and_percent_selects_numeric_cols(
+        self, tmp_path, monkeypatch, make_config
+    ):
+        """含 None 与百分比字符串时，正确识别数值列并生成图表。"""
+        from formora.core import chart
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["项目", "数值", "百分比"],
+            rows=[
+                {"项目": "A", "数值": None, "百分比": "85%"},
+                {"项目": "B", "数值": "90.5", "百分比": "92%"},
+            ],
+        )
+        task = ReportTask(name="百分比", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "data": data, "task": task})()
+        captured: dict[str, str] = {}
+
+        def fake_line_chart(
+            x_values,
+            y_values,
+            output_png,
+            title="",
+            x_label="",
+            y_label="",
+            config=None,
+        ):
+            captured["x_label"] = x_label
+            captured["y_label"] = y_label
+            return Path(output_png)
+
+        monkeypatch.setattr(chart, "generate_line_chart", fake_line_chart)
+        img = auto_chart(state)
+        assert img is not None
+        # 百分比列被识别为数值列；None 不破坏数值检测；x 轴取首个非数值列
+        assert captured["x_label"] == "项目"
+        assert captured["y_label"] == "数值"
+
+
+class TestAutoChartXAxisHint:
+    def test_auto_chart_x_axis_hint(self, tmp_path, monkeypatch, make_config):
+        """含「时间」列时，x 轴优先选择时间列。"""
+        from formora.core import chart
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["时间", "温度", "压力"],
+            rows=[
+                {"时间": "0s", "温度": 1.0, "压力": 2.0},
+                {"时间": "1s", "温度": 3.0, "压力": 4.0},
+            ],
+        )
+        task = ReportTask(name="时间轴", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "data": data, "task": task})()
+        captured: dict[str, str] = {}
+
+        def fake_line_chart(
+            x_values,
+            y_values,
+            output_png,
+            title="",
+            x_label="",
+            y_label="",
+            config=None,
+        ):
+            captured["x_label"] = x_label
+            return Path(output_png)
+
+        monkeypatch.setattr(chart, "generate_line_chart", fake_line_chart)
+        img = auto_chart(state)
+        assert img is not None
+        assert captured["x_label"] == "时间"
+
+    def test_auto_chart_x_axis_no_hint_uses_first_non_numeric(
+        self, tmp_path, monkeypatch, make_config
+    ):
+        """无时间/日期提示时，x 轴取首个非数值列。"""
+        from formora.core import chart
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["样本", "温度"],
+            rows=[{"样本": "A", "温度": 1.0}, {"样本": "B", "温度": 2.0}],
+        )
+        task = ReportTask(name="无提示", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "data": data, "task": task})()
+        captured: dict[str, str] = {}
+
+        def fake_line_chart(
+            x_values,
+            y_values,
+            output_png,
+            title="",
+            x_label="",
+            y_label="",
+            config=None,
+        ):
+            captured["x_label"] = x_label
+            return Path(output_png)
+
+        monkeypatch.setattr(chart, "generate_line_chart", fake_line_chart)
+        img = auto_chart(state)
+        assert img is not None
+        assert captured["x_label"] == "样本"
+
+
+class TestCollectImageVars:
+    def test_collect_image_vars_with_image_value(self):
+        """source_type='image' 且 value 非空时，image_vars 包含该字段。"""
+        from formora.core.models import FieldMapping
+
+        mappings = [
+            FieldMapping(
+                template_field="截图", source_type="image", value="C:/x/a.png"
+            )
+        ]
+        state = type("State", (), {"mappings": mappings})()
+        image_vars = collect_image_vars(state, auto_chart_enabled=False)
+        assert image_vars == {"截图": "C:/x/a.png"}
+
+
+class TestVersionedOutputSubdir:
+    def test_versioned_output_subdir(self, tmp_path, make_config):
+        """传 subdir 时创建子目录，且输出路径包含子目录。"""
+        from formora.core.models import ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        task = ReportTask(name="子目录", template_path=Path("t.docx"))
+        state = type("State", (), {"config": cfg, "task": task})()
+        out = _versioned_output(state, subdir="实验")
+        assert out.parent == tmp_path / "out" / "实验"
+        assert out.parent.exists()
+        assert "实验" in out.parts
+        assert out.name.startswith("子目录_输出_")
+        assert out.name.endswith(".docx")
+
+
+class TestGenerateBatchRowFailure:
+    def test_generate_batch_row_failure_appends_error(self, tmp_path, monkeypatch, make_config):
+        """批量第 2 行生成失败时，errors 含「第2行失败」且成功结果数正确。"""
+        from formora.core import generator
+        from formora.core.models import DataSource, ReportTask
+
+        cfg = make_config(output_dir=str(tmp_path / "out"))
+        data = DataSource(
+            path=Path("d.csv"),
+            kind="csv",
+            columns=["项目", "数值"],
+            rows=[
+                {"项目": "A", "数值": 1.0},
+                {"项目": "B", "数值": 2.0},
+                {"项目": "C", "数值": 3.0},
+            ],
+        )
+        template = type("Template", (), {"path": Path("t.docx")})()
+        task = ReportTask(name="批量失败", template_path=Path("t.docx"))
+        state = type(
+            "State",
+            (),
+            {
+                "config": cfg,
+                "template": template,
+                "data": data,
+                "mappings": [],
+                "task": task,
+            },
+        )()
+        calls = {"n": 0}
+
+        def fake_generate(
+            template_path, context, output_path, image_vars=None, template_info=None
+        ):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise FormoraError("模拟生成失败")
+            Path(output_path).write_bytes(b"docx")
+            return Path(output_path)
+
+        monkeypatch.setattr(generator, "generate_report", fake_generate)
+        monkeypatch.setattr(report_service, "record_task", lambda task: None)
+        results, errors = generate_batch(state, auto_chart=False)
+        assert len(results) == 2
+        assert errors == ["第2行失败: 模拟生成失败"]

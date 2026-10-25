@@ -88,6 +88,30 @@
 
 - **350 项自动化测试通过**（+48）。
 
+## [2.18.0] - 2026-10-26
+
+### Added
+
+- **测试覆盖率大幅提升**（第四批多 agent 评审落地，新增 73 项测试，395 → 468）：
+  - `ui/errors`：48% → **100%**（log_exception 堆栈路径、show_error 三分支弹窗、show_warning 透传）
+  - `services/history`：56% → **89%**（get_task 全分支、2000 条轮转、>5MB 轮转、坏行跳过、json_safe Path）
+  - `core/data_reader`：66% → **91%**（PDF 读取成功/缺包/失败、python 引擎嗅探回退、单列/罕见分隔符、numpy/NaN 归一、EmptyDataError、nan 列重命名）
+  - `api`：78% → **87%**（TTL 清理、限流器滑动窗口/最大键/clear、401、_handle_error 五分支映射、413、multipart 校验、下载 404、>200k 截断）
+  - `services/config`：79% → **93%**（损坏 JSON/非 dict 备份回退、备份 OSError、set/get、DPAPI 解密、XDG 非 Windows 路径）
+  - `core/generator`：4 条异常路径全覆盖（图片插入/模板加载/渲染/保存失败）
+  - `ai/client`：84% → **92%**（HTTP 错误包装、markdown 围栏解析、不可解析 JSON、reasoning_content 回退）
+  - `ai/cache`：87% → **95%**（contains、clear 保留/重置统计、非法键、非 dict 根/坏 stats、mkdir 失败、环境变量路径）
+  - `services/report_service`：90% → **95%**（自动图表失败/无数值列/x 轴 hint、图片变量收集、版本化子目录、批量行失败收集）
+  - `core/chart`：x 归一化字符串/布尔分支、字体候选回退
+
+### Fixed
+
+- **`test_non_windows_paths` 模块污染**：reload `formora.services.config` 后同步恢复包属性引用，避免后续测试拿到残留的 XDG 路径模块
+
+### 兼容性
+
+- **468 项自动化测试全部通过**（新增 73 项）。
+
 ## [2.17.0] - 2026-10-25
 
 ### Added

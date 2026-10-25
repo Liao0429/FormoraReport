@@ -143,3 +143,38 @@ class TestChartStyleConfig:
             assert data.shape[:2] == (400, 600)
         finally:
             chart.set_chart_config(None)
+
+
+class TestNormalizeXValues:
+    """x 轴归一化补充测试：非数值与 bool 均走字符串转换。"""
+
+    def test_normalize_x_values_mixed_strings(self):
+        # x 含非数值 → 全部转字符串，作为类别轴
+        assert chart._normalize_x_values([1, "a", 2.5]) == ["1", "a", "2.5"]
+        # x 全为 bool → 不满足“数值且非 bool”，同样走字符串转换
+        assert chart._normalize_x_values([True, False]) == ["True", "False"]
+
+
+class TestFontFallback:
+    """字体探测回退：前几个候选缺失时使用第一个可用字体。"""
+
+    def test_font_fallback(self, monkeypatch):
+        import importlib
+
+        import matplotlib.pyplot as plt
+
+        candidates = list(chart._FONT_CANDIDATES)
+        first_available = candidates[2]  # 前两个候选探测失败
+
+        def fake_findfont(name, fallback_to_default=True):
+            if name == first_available:
+                return "/fake/fonts/first_available.ttf"
+            raise ValueError(f"font not found: {name}")
+
+        prev_sans_serif = plt.rcParams.get("font.sans-serif")
+        try:
+            monkeypatch.setattr(chart.font_manager, "findfont", fake_findfont)
+            importlib.reload(chart)
+            assert plt.rcParams["font.sans-serif"] == [first_available]
+        finally:
+            plt.rcParams["font.sans-serif"] = prev_sans_serif

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from formora.core import data_reader
-from formora.core.errors import DocumentFormatError
+from formora.core.errors import DocumentFormatError, ExternalDependencyError
 
 
 class TestEncodingFallback:
@@ -199,3 +199,200 @@ class TestLargeCsvStreaming:
         assert ds.row_count == len(ds.rows) == 2
         assert ds.encoding
         assert ds.sep == ","
+class TestPdfReading:
+    """PDF 读取：文本提取、缺包报错、打开失败包装。"""
+
+    def test_read_pdf_extracts_text(self, tmp_path, monkeypatch):
+        """pdfplumber.open 被 mock 时，应提取文本并统计页数。"""
+        import pdfplumber
+
+        class _FakePage:
+            def __init__(self, text):
+                self._text = text
+
+            def extract_text(self):
+                return self._text
+
+        class _FakePDF:
+            def __init__(self, pages):
+                self.pages = pages
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        p = tmp_path / "doc.pdf"
+        p.write_bytes(b"%PDF-1.4 fake")
+        monkeypatch.setattr(
+            pdfplumber,
+            "open",
+            lambda path: _FakePDF(
+                [_FakePage("第一页内容"), _FakePage(None), _FakePage("第三页内容")]
+            ),
+        )
+        ds = data_reader.read_data(p)
+        assert ds.kind == "pdf"
+        # 第二页 extract_text() 返回 None -> 空字符串，仍参与拼接
+        assert ds.text == "第一页内容\n\n\n\n第三页内容"
+        assert "3 页" in ds.summary
+
+    def test_read_pdf_missing_pkg(self, tmp_path, monkeypatch):
+        """pdfplumber 未安装时应报 ExternalDependencyError。"""
+        import sys
+
+        p = tmp_path / "doc.pdf"
+        p.write_bytes(b"%PDF-1.4 fake")
+        monkeypatch.setitem(sys.modules, "pdfplumber", None)
+        with pytest.raises(ExternalDependencyError) as ei:
+            data_reader.read_data(p)
+        assert "pdfplumber" in str(ei.value)
+
+    def test_read_pdf_error(self, tmp_path, monkeypatch):
+        """pdfplumber.open 抛异常时应包装为 DocumentFormatError。"""
+        import pdfplumber
+
+        p = tmp_path / "doc.pdf"
+        p.write_bytes(b"%PDF-1.4 fake")
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("corrupt pdf")
+
+        monkeypatch.setattr(pdfplumber, "open", _boom)
+        with pytest.raises(DocumentFormatError) as ei:
+            data_reader.read_data(p)
+        assert "PDF" in str(ei.value)
+
+
+class TestSniffFallback:
+    """分隔符嗅探失败时回退 pandas python 引擎。"""
+
+    def test_sniff_fallback_to_python_engine(self, tmp_path):
+        """多行引号 / 字段数不齐的模糊 CSV 不抛异常且行数据正确。"""
+        # 多行引号字段：逐行嗅探失败 -> 回退 python 引擎
+        p1 = tmp_path / "multiline.csv"
+        p1.write_text(
+            '名称,备注\nAlice,"第一行\n第二行"\nBob,普通\n',
+            encoding="utf-8",
+        )
+        ds1 = data_reader.read_data(p1)
+        assert ds1.columns == ["名称", "备注"]
+        assert ds1.rows[0]["备注"] == "第一行\n第二行"
+        assert ds1.rows[1]["备注"] == "普通"
+        assert ds1.sep == ""  # 嗅探失败，未显式传入分隔符
+
+        # 字段数不齐：回退 python 引擎，缺失字段以 None 补齐
+        p2 = tmp_path / "ragged.csv"
+        p2.write_text("a,b,c\n1,2\n3,4,5\n", encoding="utf-8")
+        ds2 = data_reader.read_data(p2)
+        assert ds2.columns == ["a", "b", "c"]
+        assert ds2.rows[0] == {"a": 1, "b": 2, "c": None}
+        assert ds2.rows[1] == {"a": 3, "b": 4, "c": 5.0}
+        assert ds2.sep == ""
+
+        # 引号包裹逗号（单列但含分隔符）：嗅探误判后仍回退 python 引擎
+        p3 = tmp_path / "quoted_comma.csv"
+        p3.write_text('"a,b"\n"c,d"\n', encoding="utf-8")
+        ds3 = data_reader.read_data(p3)
+        assert ds3.columns == ["a,b"]
+        assert ds3.rows == [{"a,b": "c,d"}]
+        assert ds3.sep == ""
+
+        # 空样本直接返回 None（无法嗅探）
+        assert data_reader._sniff_delimiter("") is None
+
+    def test_single_column_csv(self, tmp_path):
+        """无分隔符的单列文件应默认按逗号分隔读取为单列。"""
+        p = tmp_path / "single.csv"
+        p.write_text("项目\nA\nB\nC\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.columns == ["项目"]
+        assert [r["项目"] for r in ds.rows] == ["A", "B", "C"]
+        assert ds.sep == ","
+
+    def test_rare_delimiter(self, tmp_path):
+        """罕见分隔符（^）应被自动嗅探并正确分列。"""
+        p = tmp_path / "rare.csv"
+        p.write_text("项目^数值\nA^1\nB^2\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.columns == ["项目", "数值"]
+        assert ds.sep == "^"
+        assert ds.rows == [{"项目": "A", "数值": 1}, {"项目": "B", "数值": 2}]
+
+
+class TestToNative:
+    """_to_native 标量与缺失值转换。"""
+
+    def test_to_native_numpy_and_nan(self):
+        import numpy as np
+        import pandas as pd
+
+        # 缺失值统一转 None
+        assert data_reader._to_native(float("nan")) is None
+        assert data_reader._to_native(pd.NaT) is None
+        assert data_reader._to_native(np.float64("nan")) is None
+        assert data_reader._to_native(np.nan) is None
+        # Timestamp / datetime64 -> ISO 字符串
+        assert (
+            data_reader._to_native(pd.Timestamp("2026-01-01"))
+            == "2026-01-01T00:00:00"
+        )
+        assert data_reader._to_native(np.datetime64("2026-01-01")) == "2026-01-01"
+        # numpy 标量 -> 原生类型
+        f64 = data_reader._to_native(np.float64(1.5))
+        assert f64 == 1.5 and type(f64) is float
+        i64 = data_reader._to_native(np.int64(3))
+        assert i64 == 3 and type(i64) is int
+        # 非标量 numpy 数组无法转换时原样返回（pd.isna 真值判断与 item() 的异常被吞掉）
+        arr = np.array([1, 2])
+        assert data_reader._to_native(arr) is arr
+        # 原生类型原样返回
+        assert data_reader._to_native(None) is None
+        assert data_reader._to_native("文本") == "文本"
+        assert data_reader._to_native(7) == 7
+        assert data_reader._to_native(True) is True
+
+
+class TestEmptyAndNanColumns:
+    """空文件与特殊列名处理。"""
+
+    def test_empty_csv_raises(self, tmp_path, monkeypatch):
+        """pandas EmptyDataError 应转换为友好的 DocumentFormatError。"""
+        import pandas as pd
+
+        p = tmp_path / "empty.csv"
+        p.write_text("非空内容\n", encoding="utf-8")  # 绕过 strip 检查，触发 pandas 分支
+
+        def _raise_empty(*args, **kwargs):
+            raise pd.errors.EmptyDataError("No columns to parse from file")
+
+        monkeypatch.setattr(pd, "read_csv", _raise_empty)
+        with pytest.raises(DocumentFormatError) as ei:
+            data_reader.read_data(p)
+        assert "空" in str(ei.value) or "没有可读取" in str(ei.value)
+
+    def test_read_tabular_other_error_wrapped(self, tmp_path, monkeypatch):
+        """pandas 读取表格的其他异常应包装为 DocumentFormatError。"""
+        import pandas as pd
+
+        p = tmp_path / "broken.csv"
+        p.write_text("a,b\n1,2\n", encoding="utf-8")
+
+        def _raise_other(*args, **kwargs):
+            raise ValueError("boom")
+
+        monkeypatch.setattr(pd, "read_csv", _raise_other)
+        with pytest.raises(DocumentFormatError) as ei:
+            data_reader.read_data(p)
+        assert "读取表格失败" in str(ei.value)
+
+    def test_nan_column_renamed(self, tmp_path):
+        """列名为 nan 时应重命名为「未命名列」。"""
+        p = tmp_path / "nan_col.csv"
+        p.write_text("nan,数值\n1,2\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.columns == ["未命名列", "数值"]
+        assert ds.rows[0]["未命名列"] == 1
+        assert ds.rows[0]["数值"] == 2
+

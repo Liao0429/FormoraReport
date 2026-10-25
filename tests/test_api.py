@@ -16,6 +16,12 @@ from fastapi.testclient import TestClient
 
 from formora import api
 from formora.api import app
+from formora.core.errors import (
+    DocumentFormatError,
+    ExternalDependencyError,
+    FormoraError,
+    UserError,
+)
 
 SAMPLES = Path(__file__).resolve().parent / "samples"
 TEMPLATE = SAMPLES / "实验报告模板.docx"
@@ -702,3 +708,214 @@ class TestGenerateBatchAsync:
         )
         assert r.status_code == 400
         assert "数据" in r.json()["detail"]
+
+
+# ---------- 覆盖率补充测试（审查清单） ----------
+
+
+class TestPruneExpired:
+    """_prune_expired：清理过期文件/任务/批量记录并同步删除磁盘文件。"""
+
+    def test_prune_expired_files_and_tasks(self, monkeypatch, tmp_path):
+        import formora.api as api_mod
+
+        now = 1_000_000.0
+        monkeypatch.setattr(api_mod, "_now", lambda: now)
+
+        old_file = tmp_path / "old.docx"
+        old_file.write_bytes(b"old file")
+        old_fid = "file_expired"
+        api_mod._FILES[old_fid] = api_mod._FileRecord(
+            path=old_file, created_at=now - api_mod.FILE_TTL_SECONDS - 1
+        )
+
+        old_task_file = tmp_path / "old_task.docx"
+        old_task_file.write_bytes(b"old task")
+        old_tid = "task_expired"
+        api_mod._TASKS[old_tid] = api_mod._TaskRecord(
+            path=old_task_file,
+            kind="docx",
+            created_at=now - api_mod.FILE_TTL_SECONDS - 1,
+        )
+
+        old_bid = "batch_expired"
+        api_mod._BATCHES[old_bid] = api_mod._BatchRecord(
+            batch_id=old_bid,
+            status="done",
+            total=1,
+            completed=1,
+            created_at=now - api_mod.FILE_TTL_SECONDS - 1,
+        )
+
+        fresh_file = tmp_path / "fresh.docx"
+        fresh_file.write_bytes(b"fresh file")
+        fresh_fid = "file_fresh"
+        api_mod._FILES[fresh_fid] = api_mod._FileRecord(
+            path=fresh_file, created_at=now
+        )
+
+        api_mod._prune_expired()
+
+        assert old_fid not in api_mod._FILES
+        assert not old_file.exists()
+        assert old_tid not in api_mod._TASKS
+        assert not old_task_file.exists()
+        assert old_bid not in api_mod._BATCHES
+        assert fresh_fid in api_mod._FILES
+        assert fresh_file.exists()
+
+
+class TestRateLimiterUnit:
+    """_RateLimiter：滑动窗口弹出过期时间戳、_max_keys 触发 prune、clear 清空。"""
+
+    def test_allow_sliding_window_evicts_stale(self):
+        import formora.api as api_mod
+
+        rl = api_mod._RateLimiter(max_requests=2, window_seconds=60.0)
+        assert rl.allow("a", now=100.0) is True
+        assert rl.allow("a", now=100.0) is True
+        # 窗口未滑出：超限且不记录新时间戳
+        assert rl.allow("a", now=100.0) is False
+        assert list(rl._hits["a"]) == [100.0, 100.0]
+        # 窗口滑出：旧时间戳被弹出，重新获得额度
+        assert rl.allow("a", now=160.0) is True
+        assert list(rl._hits["a"]) == [160.0]
+
+    def test_allow_max_keys_triggers_prune(self):
+        import formora.api as api_mod
+
+        rl = api_mod._RateLimiter(max_requests=5, window_seconds=60.0)
+        rl._max_keys = 2
+        assert rl.allow("stale", now=0.0) is True
+        assert rl.allow("live", now=200.0) is True
+        # 字典达到 _max_keys：新 key 触发 _prune，清除已完全滑出窗口的 key
+        assert rl.allow("new", now=210.0) is True
+        assert "stale" not in rl._hits
+        assert "live" in rl._hits
+        assert "new" in rl._hits
+
+    def test_clear_resets_hits(self):
+        import formora.api as api_mod
+
+        rl = api_mod._RateLimiter(max_requests=5, window_seconds=60.0)
+        rl.allow("a", now=100.0)
+        rl.allow("b", now=100.0)
+        assert set(rl._hits) == {"a", "b"}
+        rl.clear()
+        assert rl._hits == {}
+
+
+class TestAuthWrongToken:
+    def test_auth_wrong_token_401(self, monkeypatch):
+        """配置 FORMORA_API_KEY 后，错误 Bearer token 返回 401。"""
+        import formora.api as api_mod
+        from fastapi.testclient import TestClient as TC
+
+        monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
+        c = TC(app)
+        with DATA.open("rb") as f:
+            r = c.post(
+                "/api/data/read",
+                files={"file": ("数据.csv", f, "text/csv")},
+                headers={"Authorization": "Bearer wrong-key"},
+            )
+        assert r.status_code == 401
+        assert "认证失败" in r.json()["detail"]
+
+
+class TestHandleError:
+    """_handle_error：core 异常映射为友好状态码与通用消息。"""
+
+    @pytest.mark.parametrize(
+        "exc,status,expected",
+        [
+            (UserError("实验名称不能为空"), 400, "实验名称不能为空"),
+            (DocumentFormatError("DOCX 损坏"), 422, "文件格式不支持，请检查文件内容"),
+            (ExternalDependencyError("LibreOffice 不可用"), 503, "外部依赖不可用"),
+            (FormoraError("未知领域错误"), 422, "请求处理失败，请检查输入"),
+            (RuntimeError("内部缺陷"), 500, "服务器内部错误，请稍后重试"),
+        ],
+    )
+    def test_handle_error_mapping(self, exc, status, expected):
+        import formora.api as api_mod
+
+        result = api_mod._handle_error(exc)
+        assert result.status_code == status
+        assert expected in result.detail
+
+
+class TestUploadTooLarge:
+    def test_upload_too_large_413(self, client, monkeypatch):
+        """上传超过 MAX_UPLOAD_SIZE → 413，且不留下文件记录。"""
+        import formora.api as api_mod
+
+        monkeypatch.setattr(api_mod, "MAX_UPLOAD_SIZE", 100)
+        big = b"x" * 1024
+        r = client.post("/api/data/read", files={"file": ("big.csv", big, "text/csv")})
+        assert r.status_code == 413
+        assert "超过大小限制" in r.json()["detail"]
+        assert api_mod._FILES == {}
+
+
+class TestGenerateBatchValidation:
+    """批量生成 multipart 表单参数校验。"""
+
+    def test_batch_form_invalid_mappings_json(self, client):
+        """mappings 不是合法 JSON → 400。"""
+        r = client.post(
+            "/api/report/generate_batch",
+            data={"template_file_id": "tpl", "mappings": "not-json"},
+            files={"file": ("数据.csv", b"a,b\n1,2\n", "text/csv")},
+        )
+        assert r.status_code == 400
+        assert "mappings 必须是 JSON 数组字符串" in r.json()["detail"]
+
+    def test_batch_form_conflict_data_source(self, client):
+        """同时提供 data_file_id 与文件上传 → 400。"""
+        mappings = json.dumps(
+            [
+                {
+                    "template_field": "实验名称",
+                    "source_type": "constant",
+                    "constant_value": "冲突实验",
+                }
+            ]
+        )
+        r = client.post(
+            "/api/report/generate_batch",
+            data={
+                "template_file_id": "tpl",
+                "mappings": mappings,
+                "data_file_id": "existing_data_id",
+            },
+            files={"file": ("数据.csv", b"a,b\n1,2\n", "text/csv")},
+        )
+        assert r.status_code == 400
+        assert "不能同时提供 data_file_id 与文件上传" in r.json()["detail"]
+
+
+class TestDownloadAndText:
+    def test_download_missing_404(self, client):
+        """下载不存在的任务 → 404。"""
+        r = client.get("/api/report/not_exist/download")
+        assert r.status_code == 404
+        assert "报告不存在或已过期" in r.json()["detail"]
+
+    def test_report_text_truncated(self, client, monkeypatch, tmp_path):
+        """抽取文本超过 200k 时截断并追加提示后缀。"""
+        import formora.api as api_mod
+
+        long_text = "A" * 200_001
+        monkeypatch.setattr(api_mod, "extract_report_text", lambda path: long_text)
+        p = tmp_path / "report.docx"
+        p.write_bytes(b"PK")
+        task_id = "task_trunc"
+        api_mod._TASKS[task_id] = api_mod._TaskRecord(
+            path=p, kind="docx", created_at=time.time()
+        )
+        r = client.post(f"/api/report/{task_id}/text")
+        assert r.status_code == 200
+        text = r.json()["text"]
+        assert text.startswith("A" * 200_000)
+        assert text.endswith("\n...[内容过长已截断]")
+        assert len(text) == 200_000 + len("\n...[内容过长已截断]")

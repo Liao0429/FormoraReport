@@ -251,3 +251,95 @@ class TestTemplateParseCache:
         assert len(files) == 20
         texts = " ".join(p.text for p in Document(str(files[0])).paragraphs)
         assert "任务0-0" in texts
+
+
+class TestExceptionPaths:
+    """异常路径：图片包装/模板加载/渲染/保存失败统一转为 DocumentFormatError。"""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        generator.clear_template_cache()
+        yield
+        generator.clear_template_cache()
+
+    @staticmethod
+    def _make_template(tmp_path: Path, placeholder: str = "实验名称") -> Path:
+        from docx import Document
+
+        tpl = tmp_path / "tpl.docx"
+        doc = Document()
+        doc.add_paragraph(f"{{{{{placeholder}}}}}")
+        doc.save(str(tpl))
+        return tpl
+
+    def test_render_image_failure_raises(self, tmp_path, monkeypatch):
+        """InlineImage 构造抛异常时，_render_image 应包装为 DocumentFormatError。"""
+        import docxtpl
+        from docxtpl import DocxTemplate
+
+        tpl = self._make_template(tmp_path, placeholder="chart")
+        png = _make_mini_png(tmp_path / "img.png")
+        t = DocxTemplate(str(tpl))
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("image boom")
+
+        monkeypatch.setattr(docxtpl, "InlineImage", _boom)
+        with pytest.raises(DocumentFormatError, match="插入图片"):
+            generator._render_image(t, "chart", str(png))
+
+    def test_load_template_failure_raises(self, tmp_path, monkeypatch):
+        """DocxTemplate 构造失败时，generate_report 应包装为 DocumentFormatError。"""
+        import docxtpl
+
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("load boom")
+
+        monkeypatch.setattr(docxtpl, "DocxTemplate", _boom)
+        with pytest.raises(DocumentFormatError, match="无法加载模板"):
+            generator.generate_report(
+                tpl, {"实验名称": "x"}, tmp_path / "out.docx", template_info=info
+            )
+
+    def test_render_failure_raises(self, tmp_path, monkeypatch):
+        """tpl.render 抛异常时，generate_report 应包装为 DocumentFormatError。"""
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+
+        class _BrokenRenderTpl:
+            def render(self, *args, **kwargs):
+                raise RuntimeError("render boom")
+
+            def save(self, path):
+                pass
+
+        monkeypatch.setattr(
+            generator, "_get_cached_template", lambda *a, **k: _BrokenRenderTpl()
+        )
+        with pytest.raises(DocumentFormatError, match="模板渲染失败"):
+            generator.generate_report(
+                tpl, {"实验名称": "x"}, tmp_path / "out.docx", template_info=info
+            )
+
+    def test_save_failure_raises(self, tmp_path, monkeypatch):
+        """tpl.save 抛异常时，generate_report 应包装为 DocumentFormatError。"""
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+
+        class _BrokenSaveTpl:
+            def render(self, *args, **kwargs):
+                pass
+
+            def save(self, path):
+                raise RuntimeError("save boom")
+
+        monkeypatch.setattr(
+            generator, "_get_cached_template", lambda *a, **k: _BrokenSaveTpl()
+        )
+        with pytest.raises(DocumentFormatError, match="保存输出文档失败"):
+            generator.generate_report(
+                tpl, {"实验名称": "x"}, tmp_path / "out.docx", template_info=info
+            )
