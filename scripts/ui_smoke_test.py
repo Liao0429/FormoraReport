@@ -81,6 +81,11 @@ print("校验 OK:", win.pages["mapping"].issues_text.toPlainText()[:60])
 
 # 生成报告
 win.pages["mapping"]._generate()
+# 单份生成已异步化：轮询等待后台线程完成（最多 30 秒）
+deadline = time.time() + 30
+while time.time() < deadline and not state.output_path:
+    app.processEvents()
+    time.sleep(0.05)
 app.processEvents()
 print("生成后 output_path:", state.output_path)
 assert state.output_path and Path(state.output_path).exists(), "输出文件不存在"

@@ -2,13 +2,14 @@
 
 生成、图表、AI 素材等纯逻辑已抽到 services/report_service.py，本页只负责 UI 交互。
 
-线程化：AI 请求（网络，60s 超时）与批量生成（可能大量行）都放到后台 QThread，
+线程化：AI 请求（网络，60s 超时）、单份生成与批量生成（可能大量行）都放到后台 QThread，
 避免阻塞 UI 主线程；完成后通过信号回到主线程更新界面。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -32,6 +33,10 @@ from formora.core.errors import FormoraError
 from formora.services import report_service
 from formora.services.report_service import is_image_field
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
+from formora.ui.errors import inline_message, log_exception
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class _TaskThread(QThread):
@@ -51,7 +56,10 @@ class _TaskThread(QThread):
             result = self._fn(*self._args, **self._kwargs)
             self.result_ready.emit(result)
         except Exception as e:  # noqa: BLE001 - 统一转成用户可读消息
-            self.error_raised.emit(str(e))
+            # 业务异常展示 user_message；未知异常统一「操作失败」并记日志，
+            # 避免把内部堆栈/异常细节泄露给用户。
+            log_exception(e, logger=_LOGGER, prefix="后台任务")
+            self.error_raised.emit(inline_message(e, "操作失败"))
 
 
 class MappingPage(QWidget):
@@ -62,6 +70,7 @@ class MappingPage(QWidget):
         self._val_edits: dict[int, QLineEdit] = {}
         self._ai_thread: _TaskThread | None = None
         self._batch_thread: _TaskThread | None = None
+        self._gen_thread: _TaskThread | None = None
         self._build()
 
     def _build(self):
@@ -341,6 +350,7 @@ class MappingPage(QWidget):
         )
 
     def _validate(self):
+        self._set_busy(True)
         try:
             self._collect_mappings()
             mapping_issues = validator.validate_mappings(
@@ -362,7 +372,12 @@ class MappingPage(QWidget):
                 "\n".join(lines) if lines else "✅ 未发现明显问题。"
             )
         except FormoraError as e:
-            self.issues_text.setPlainText(f"校验出错：{e}")
+            self.issues_text.setPlainText(f"校验出错：{e.user_message}")
+        except Exception as e:  # noqa: BLE001 - 未知异常统一兜底
+            log_exception(e, logger=_LOGGER, prefix="校验")
+            self.issues_text.setPlainText(f"校验出错：{inline_message(e, '操作失败')}")
+        finally:
+            self._set_busy(False)
 
     def _generate(self):
         state = self.state
@@ -370,14 +385,27 @@ class MappingPage(QWidget):
             QMessageBox.warning(self, "提示", "请先解析模板。")
             return
         self._collect_mappings()
-        try:
-            out_path = report_service.generate_single(
-                state, row=self._current_row(), auto_chart=self.chart_check.isChecked()
-            )
-            self.issues_text.setPlainText(f"✅ 报告已生成：\n{out_path}")
-            self.navigate("generate")
-        except FormoraError as e:
-            QMessageBox.critical(self, "生成失败", str(e))
+        self.issues_text.setPlainText("⏳ 正在生成当前行报告，请稍候…")
+        self._set_busy(True)
+        self._gen_thread = _TaskThread(
+            report_service.generate_single,
+            state,
+            row=self._current_row(),
+            auto_chart=self.chart_check.isChecked(),
+        )
+        self._gen_thread.result_ready.connect(self._on_gen_done)
+        self._gen_thread.error_raised.connect(self._on_gen_error)
+        self._gen_thread.start()
+
+    def _on_gen_done(self, out_path):
+        self._set_busy(False)
+        self.issues_text.setPlainText(f"✅ 报告已生成：\n{out_path}")
+        self.navigate("generate")
+
+    def _on_gen_error(self, msg):
+        self._set_busy(False)
+        QMessageBox.critical(self, "生成失败", msg)
+        self.issues_text.setPlainText(f"生成失败：{msg}")
 
     def _set_busy(self, busy: bool):
         """批量/AI 任务执行期间禁用操作按钮，避免重复触发。"""

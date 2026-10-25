@@ -29,14 +29,16 @@ def _find_placeholders(text: str) -> set[str]:
 
 
 _LOOP_RE = re.compile(r"\{\%\s*for\s+(\w+)\s+in\s+(\w+)\s*\%\}")
-# 循环体内字段引用：{{ row['项目'] }} / {{ row.项目 }} / {{ item["name"] }}
+# 循环体内字段引用：{{ row[\'项目\'] }} / {{ row.项目 }} / {{ item["name"] }}
 _LOOP_FIELD_RE = re.compile(
-    r"\{\{\s*\w+\s*\.?\s*\[?\s*['\"]?([\w\u4e00-\u9fa5]+)['\"]?\s*\]?\s*\}\}"
+    r"\{\{\s*\w+\s*\.?\s*\[?\s*[\'\"]?([\w\u4e00-\u9fa5]+)[\'\"]?\s*\]?\s*\}\}"
 )
 # 循环块整体：{% for x in y %} ... {% endfor %}（用于从文本中剔除循环体内引用）
 _LOOP_BODY_RE = re.compile(
     r"\{\%\s*for\s+\w+\s+in\s+\w+\s*\%\}.*?\{\%\s*endfor\s*\%\}", re.DOTALL
 )
+# 循环结束标记：{% endfor %}（用于检测未闭合循环块）
+_ENDFOR_RE = re.compile(r"\{\%\s*endfor\s*\%\}")
 
 # 章节关键字 -> 规范化章节名
 _SECTION_KEYWORDS = [
@@ -51,19 +53,60 @@ _SECTION_KEYWORDS = [
     ("附录", ["附录"]),
 ]
 
+# 章节标题编号模式：段首编号，如「一、」「1.」「(1)」「第一章」「A.」等
+_SECTION_NUMBER_RE = re.compile(
+    r"^\s*(?:"
+    r"[（(]\s*[\d一二三四五六七八九十百千万零两]+\s*[）)]"  # (1) / （一）
+    r"|[\d一二三四五六七八九十百千万零两]+\s*[、.．)）:：]"   # 1. / 一、 / 3：
+    r"|第\s*[\d一二三四五六七八九十百千万零两]+\s*[章节部分篇]"  # 第一章 / 第2节
+    r"|[A-Za-z]\s*[、.．)）:：]"                            # A. / a、
+    r")"
+)
+# 编号字符集：关键字前只允许出现编号/空格，才可能是章节标题
+_SECTION_NUM_CHARS = set(
+    "0123456789"
+    "一二三四五六七八九十百千万零两"
+    "第章节部分篇"
+    "、.．,，)）]】:：-—·（( \t"
+)
+
 
 def _extract_all_text(element) -> list[str]:
-    """递归提取 OOXML 元素下所有 w:t 文本节点的非空文本。
+    """按段落拼接 OOXML 元素下所有 w:t 文本，返回各段落非空文本。
 
-    用于扫描页眉/页脚/表格/嵌套表格中的文本（python-docx 的 paragraphs
-    不包含表格单元格，必须遍历底层 XML 才能覆盖完整）。
+    Word 常把一个词/占位符拆成多个 w:t（字体切换、拼写检查、修订痕迹等），
+    逐节点扫描会漏掉跨 run 的占位符（如「{{姓名}}」拆成「{{姓」「名}}」）。
+    因此以 w:p 段落为单位拼接所有 w:t 再返回，用于页眉/页脚/表格/嵌套表格扫描
+    （python-docx 的 paragraphs 不包含表格单元格，必须遍历底层 XML 才能覆盖完整）。
     """
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     texts: list[str] = []
-    for t in element.iter():
-        if t.tag == ns + "t" and t.text and t.text.strip():
-            texts.append(t.text.strip())
+    for p in element.iter():
+        if p.tag != ns + "p":
+            continue
+        parts = [t.text for t in p.iter() if t.tag == ns + "t" and t.text]
+        text = "".join(parts).strip()
+        if text:
+            texts.append(text)
     return texts
+
+
+def _is_section_heading(text: str, keyword: str) -> bool:
+    """判断段落是否为章节标题。
+
+    要求关键字出现在段首附近（前 8 个字符内）且整段较短（<=50 字符），
+    并且段首有编号模式（如「一、」「1.」「第一章」）或关键字前仅有编号/空格。
+    避免把「本次实验的目的是验证流程」这类正文短句误判为章节标题。
+    """
+    idx = text.find(keyword)
+    if idx == -1 or idx > 8 or len(text) > 50:
+        return False
+    prefix = text[:idx]
+    if not prefix:
+        return True
+    if _SECTION_NUMBER_RE.match(text):
+        return True
+    return all(ch in _SECTION_NUM_CHARS for ch in prefix)
 
 
 def _detect_sections(paragraph_texts: list[str]) -> dict[str, str]:
@@ -76,10 +119,7 @@ def _detect_sections(paragraph_texts: list[str]) -> dict[str, str]:
             if canonical in sections:
                 continue
             for kw in keywords:
-                idx = text.find(kw)
-                # 标题形式：「实验名称」「一、实验名称」「(1) 实验目的」等：
-                # 关键字出现在前 8 个字符内，且整段较短（更像标题而非正文）
-                if idx != -1 and idx <= 8 and len(text) <= 50:
+                if _is_section_heading(text, kw):
                     sections[canonical] = text
                     break
     return sections
@@ -112,9 +152,12 @@ def parse_template(path: str | Path) -> TemplateInfo:
     tables: list[TableInfo] = []
     has_images = False
     has_header_footer = False
+    loop_open = 0  # {% for %} 出现次数（全文统计，用于未闭合循环检测）
+    loop_close = 0  # {% endfor %} 出现次数
+    seen_hf_elements: set[int] = set()  # 多节文档共享页眉/页脚部件时去重，避免重复扫描
 
     def scan_paragraph(p):
-        nonlocal has_images
+        nonlocal has_images, loop_open, loop_close
         text = p.text or ""
         if text.strip():
             para_texts.append(text)
@@ -122,8 +165,11 @@ def parse_template(path: str | Path) -> TemplateInfo:
         # 不应加入 placeholders（否则映射表出现 row['项目'] 这类怪字段）
         loop_body = _LOOP_BODY_RE.sub("", text)
         placeholders.update(_find_placeholders(loop_body))
-        for _var, _seq in _LOOP_RE.findall(text):
+        loop_matches = _LOOP_RE.findall(text)
+        for _var, _seq in loop_matches:
             loop_blocks.add(_var)
+        loop_open += len(loop_matches)
+        loop_close += len(_ENDFOR_RE.findall(text))
         if p._p.xml.count("<pic:pic") > 0 or "graphic" in p._p.xml:
             has_images = True
 
@@ -147,6 +193,13 @@ def parse_template(path: str | Path) -> TemplateInfo:
                 placeholders.update(_find_placeholders(cell_body))
                 cell_paras = [cp.text for cp in cell.paragraphs if cp.text.strip()]
                 para_texts.extend(cell_paras)
+        # 循环块统计覆盖全表所有行（docxtpl 行循环的 {% for %}/{% endfor %}
+        # 可能分布在多行，不能只统计 sample 前 6 行）
+        for row in table.rows:
+            for cell in row.cells:
+                cell_text = cell.text or ""
+                loop_open += len(_LOOP_RE.findall(cell_text))
+                loop_close += len(_ENDFOR_RE.findall(cell_text))
         tables.append(
             TableInfo(
                 index=ti,
@@ -157,15 +210,29 @@ def parse_template(path: str | Path) -> TemplateInfo:
             )
         )
 
-    # 页眉页脚：递归扫描所有 w:t 文本（含页眉页脚里的表格单元格、嵌套表格）
+    # 页眉页脚：按段落拼接 w:t 后再匹配占位符（Word 常把占位符拆成多个 w:t，
+    # 逐节点扫描会漏检；含页眉页脚里的表格单元格、嵌套表格）
     for section in doc.sections:
         for hf in (section.header, section.footer):
-            texts = _extract_all_text(hf._element)
+            element = hf._element
+            if id(element) in seen_hf_elements:
+                continue
+            seen_hf_elements.add(id(element))
+            texts = _extract_all_text(element)
             if texts:
                 has_header_footer = True
                 para_texts.extend(texts)
                 for t in texts:
                     placeholders.update(_find_placeholders(t))
+                    loop_open += len(_LOOP_RE.findall(t))
+                    loop_close += len(_ENDFOR_RE.findall(t))
+
+    if loop_open != loop_close:
+        raise DocumentFormatError(
+            f"模板中的循环块不配对：检测到 {loop_open} 个 {{% for %}}，"
+            f"{loop_close} 个 {{% endfor %}}。"
+            "请检查模板中的循环是否成对闭合（每个 {% for %} 都需要 {% endfor %}）。"
+        )
 
     sections = _detect_sections(para_texts)
     return TemplateInfo(

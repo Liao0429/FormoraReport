@@ -38,6 +38,37 @@
 
 - **297 项自动化测试通过**（新增 2 项）。
 
+## [2.15.0] - 2026-10-25
+
+### Added
+
+- **报告生成/导出全面后台化（不再卡 UI）**：
+  - `mapping_page` 单份「生成当前行报告」改为 `_TaskThread` 后台执行 + busy 态保护
+  - `generate_page` 单份「导出 PDF」改为后台 QThread（新增 `_SinglePdfWorker`）
+  - `preview_page` 导出 PDF 改为后台 QThread（新增 `_PdfExportThread`），AI 审查异常统一走 `ui.errors`
+- **深色主题 QMessageBox 样式**：`theme.py` 补齐深色主题下消息框背景/文本/按钮（含 hover/pressed/默认按钮）样式
+- **日志分类真实生效**：`logging_setup.category_of` 接入 `_CategoryFilter` 挂到文件/控制台 handler；`get_logger` 提供全局懒加载入口；`setup_logging` 重复初始化先清理旧 handler
+- **模板解析增强**：页眉页脚按段落拼接 w:t 跨 run 识别占位符（按元素去重）；章节检测收紧（段首编号模式 + 长度/位置约束）；未闭合循环块抛出 `DocumentFormatError` 友好错误
+- **数据读取健壮性**：`_to_native` 处理 `pd.NA`/`NaT`/numpy NaN（含 `np.float32`）；分隔符嗅探限前 100 行 + 显式传 sep 走 C 引擎；单列 CSV 不再被 `csv.Sniffer` 误判；`_read_pdf` 在 `with` 块内取页数
+- **benchmark.py 跨平台**：内存获取 psutil → ctypes(Windows) → resource(POSIX) 三级降级；硬编码版本/日期改为运行时真实值；样本为空提前退出
+- **models.py**：E402 import 位置清理、`CORE_FIELDS`/`ReportTask.log` 类型注解补全；`FieldMapping.resolved_value()` 评估后保留（测试依赖）
+
+### Fixed
+
+- **preview_page `QPlainTextEdit.append()` 必崩 bug**：PySide6 无 `append`，改为 `appendPlainText()`
+- **输出路径 `.replace(".docx", ".pdf")` 误替换**：`generate_page`/`preview_page` 改用 `splitext`/`with_suffix`，路径目录含 `.docx` 不再错位
+- **settings_page 悬空线程引用**：`_TestConnectionThread` 完成后释放引用，重复点击 `RuntimeError` 兜底；退出时等待线程结束（`aboutToQuit` 连接）
+- **批量导出竞态**：过期线程的 `finished` 信号不再覆盖新线程 UI/引用（`sender()` 守卫）
+- **`_TaskThread` 裸异常**：`mapping_page` 后台任务异常统一 `log_exception` + `inline_message`（`FormoraError` 走 `user_message`）
+
+### Docs
+
+- **打包体积优化方案**（`FormoraReport-onefile.spec` 待落地）：移除 `collect_all`（pandas/matplotlib tests 约 15MB）、排除 `opengl32sw.dll`（20.6MB）/cryptography+OpenSSL（约 20MB）/tkinter/FastAPI 栈/Qt 翻译（只留中英），预计 exe 从 130.8MB 降至 70-80MB
+
+### 兼容性
+
+- **302 项自动化测试通过**（新增 5 项）。
+
 ## [Unreleased]
 
 ## [2.12.0] - 2026-10-25

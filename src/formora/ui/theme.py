@@ -216,7 +216,33 @@ QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
 QStatusBar {{ background: transparent; color: {_D_TEXT_HINT}; }}
 QLabel#LogText {{ color: {_D_TEXT_SUB}; }}
 QLabel#HintText {{ color: {_D_TEXT_HINT}; font-size: 12px; }}
-QMessageBox {{ background: #1a1d28; }}
+QMessageBox {{
+    background: #1a1d28;
+    color: {_D_TEXT};
+}}
+QMessageBox QLabel {{
+    color: {_D_TEXT};
+}}
+QMessageBox QPushButton {{
+    background: rgba(255,255,255,0.08);
+    color: {_D_TEXT};
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 8px;
+    padding: 6px 18px;
+    min-width: 64px;
+}}
+QMessageBox QPushButton:hover {{
+    background: rgba(255,255,255,0.16);
+}}
+QMessageBox QPushButton:pressed {{
+    background: rgba(255,255,255,0.22);
+}}
+QMessageBox QPushButton:default {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {_D_ACCENT_TOP}, stop:1 {_D_ACCENT_BOTTOM});
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+}}
 """
 
 

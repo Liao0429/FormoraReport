@@ -11,17 +11,15 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QProgressBar,
     QPlainTextEdit,
+    QProgressBar,
     QVBoxLayout,
     QWidget,
 )
 
-from formora.core.errors import BatchExportCancelledError, FormoraError
-from formora.ui.errors import show_error, show_warning
+from formora.core.errors import BatchExportCancelledError
+from formora.ui.errors import show_error
 from formora.ui.widgets import Card, primary_button, secondary_button
-
-
 
 
 class _BatchPdfWorker(QThread):
@@ -55,12 +53,36 @@ class _BatchPdfWorker(QThread):
             self.cancelled.emit()
         except Exception as exc:  # noqa: BLE001 - 统一转用户可读错误
             self.failed.emit(exc)
+
+
+class _SinglePdfWorker(QThread):
+    """后台单份 PDF 转换线程：避免 LibreOffice 转换阻塞 UI。"""
+
+    done = Signal(object)  # 输出 PDF 路径
+    failed = Signal(object)  # 异常对象
+
+    def __init__(self, docx_path: str):
+        super().__init__()
+        self._docx_path = docx_path
+
+    def run(self) -> None:
+        from formora.core import pdf_exporter
+
+        try:
+            # 用 splitext 而非 replace，避免路径目录名含 ".docx" 时替换错位置
+            out = os.path.splitext(self._docx_path)[0] + ".pdf"
+            pdf_exporter.export_pdf(self._docx_path, out)
+            self.done.emit(out)
+        except Exception as exc:  # noqa: BLE001 - 统一转用户可读错误
+            self.failed.emit(exc)
+
 class GeneratePage(QWidget):
     def __init__(self, state, navigate):
         super().__init__()
         self.state = state
         self.navigate = navigate
         self._batch_thread: _BatchPdfWorker | None = None
+        self._single_thread: _SinglePdfWorker | None = None
         self._build()
 
     def _build(self):
@@ -89,8 +111,8 @@ class GeneratePage(QWidget):
         open_btn.clicked.connect(self._open_folder)
         preview_btn = primary_button("预览报告")
         preview_btn.clicked.connect(lambda: self.navigate("preview"))
-        export_btn = secondary_button("导出 PDF")
-        export_btn.clicked.connect(self._export_pdf)
+        self.export_btn = secondary_button("导出 PDF")
+        self.export_btn.clicked.connect(self._export_pdf)
         self.batch_pdf_btn = secondary_button("批量导出 PDF")
         self.batch_pdf_btn.clicked.connect(self._export_batch_pdf)
         self.batch_pdf_btn.setToolTip("把当前批次目录下的所有 DOCX 转为 PDF")
@@ -105,7 +127,7 @@ class GeneratePage(QWidget):
         ops.addWidget(self.progress_bar)
         ops.addWidget(self.cancel_btn)
         ops.addWidget(open_btn)
-        ops.addWidget(export_btn)
+        ops.addWidget(self.export_btn)
         ops.addWidget(self.batch_pdf_btn)
         ops.addStretch(1)
         ops.addWidget(preview_btn)
@@ -138,21 +160,37 @@ class GeneratePage(QWidget):
         if not self.state.output_path:
             QMessageBox.warning(self, "提示", "还没有输出文件。")
             return
-        from formora.core import pdf_exporter
+        if self._single_thread is not None and self._single_thread.isRunning():
+            return  # 已有单份导出在后台执行，避免重复触发
+        self.export_btn.setEnabled(False)
+        thread = _SinglePdfWorker(self.state.output_path)
+        self._single_thread = thread
+        thread.done.connect(self._on_single_pdf_done)
+        thread.failed.connect(self._on_single_pdf_failed)
+        thread.finished.connect(self._on_single_pdf_thread_finished)
+        thread.start()
 
-        try:
-            out = self.state.output_path.replace(".docx", ".pdf")
-            pdf_exporter.export_pdf(self.state.output_path, out)
-            QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
-        except Exception as exc:
-            show_warning(self, exc, "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。", title="导出 PDF 失败", prefix="导出 PDF")
+    def _on_single_pdf_done(self, out: str) -> None:
+        QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
+
+    def _on_single_pdf_failed(self, exc) -> None:
+        show_error(self, exc, "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。", title="导出 PDF 失败", prefix="导出 PDF")
+
+    def _on_single_pdf_thread_finished(self) -> None:
+        if self._single_thread is not self.sender():
+            return  # 过期线程的 finished 信号，忽略以免覆盖新线程状态
+        self.export_btn.setEnabled(True)
+        self._single_thread = None
 
     def _export_batch_pdf(self):
         """把当前批次目录下的所有 DOCX 转为 PDF（后台线程执行，可取消）。"""
         import glob
 
-        if self._batch_thread is not None and self._batch_thread.isRunning():
-            return  # 已有批次在转换，避免重复触发
+        if self._batch_thread is not None:
+            if self._batch_thread.isRunning():
+                return  # 已有批次在转换，避免重复触发
+            # 上一个线程已结束但 finished 尚未处理：清掉过期引用再启动新线程
+            self._batch_thread = None
         batch_dir = getattr(self.state, "last_batch_dir", None)
         if not batch_dir or not os.path.isdir(batch_dir):
             QMessageBox.warning(self, "提示", "没有可用的批次目录。")
@@ -199,6 +237,8 @@ class GeneratePage(QWidget):
         show_error(self, exc, "批量导出 PDF 失败，请检查 LibreOffice 是否可用。", title="批量导出 PDF 失败", prefix="批量导出 PDF")
 
     def _on_batch_thread_finished(self) -> None:
+        if self._batch_thread is not self.sender():
+            return  # 过期线程的 finished 信号，忽略以免覆盖新线程状态
         self.batch_pdf_btn.setEnabled(True)
         self.progress_bar.hide()
         self.cancel_btn.hide()

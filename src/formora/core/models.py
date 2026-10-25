@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Literal
+
 # 任务书要求的核心章节字段（models 与 validator 共用，避免漂移）
-CORE_FIELDS = [
+CORE_FIELDS: list[str] = [
     "实验名称",
     "实验目的",
     "实验环境",
@@ -14,11 +19,6 @@ CORE_FIELDS = [
     "实验结论",
     "结论",
 ]
-
-import uuid
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Literal
 
 FieldSourceType = Literal["column", "constant", "text", "chart", "image"]
 
@@ -126,7 +126,12 @@ class ReportTask:
     created_at: str = ""
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
-    def log(self, level, category, message):
+    def log(
+        self,
+        level: Literal["info", "warning", "error", "success"],
+        category: Literal["user", "format", "dependency", "bug", "system"],
+        message: str,
+    ) -> None:
         self.logs.append(TaskLog(level=level, category=category, message=message))
 
 

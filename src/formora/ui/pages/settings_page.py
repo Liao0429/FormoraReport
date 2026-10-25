@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -49,6 +50,9 @@ class SettingsPage(QWidget):
         self._test_thread = None
         self._build()
         self._load()
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._wait_for_test_thread)
 
     def _build(self):
         lay = QVBoxLayout(self)
@@ -164,8 +168,14 @@ class SettingsPage(QWidget):
 
     def _test_ai(self):
         # 临时用当前界面值测试，不落盘；后台线程执行，避免阻塞 UI
-        if self._test_thread is not None and self._test_thread.isRunning():
-            return
+        thread = getattr(self, "_test_thread", None)
+        if thread is not None:
+            try:
+                if thread.isRunning():
+                    return
+            except RuntimeError:
+                # 旧线程对象已被 finished→deleteLater 销毁，清理悬空引用后继续
+                self._test_thread = None
         base_url = self.ai_base.text().strip()
         model = self.ai_model.text().strip()
         key = self.ai_key.text().strip() or self.state.config.get_ai_api_key()
@@ -192,13 +202,29 @@ class SettingsPage(QWidget):
     def _on_test_finished(self):
         self.test_btn.setEnabled(True)
         self.test_btn.setText("测试连接")
+        # 释放线程引用；C++ 对象由 finished→deleteLater 负责销毁，避免悬空指针
+        self._test_thread = None
 
     def closeEvent(self, event):
         # 防止页面在测试线程仍运行时销毁导致 "QThread: Destroyed while thread is still running"
-        thread = getattr(self, "_test_thread", None)
-        if thread is not None and thread.isRunning():
-            thread.wait(3000)
+        self._wait_for_test_thread(3000)
         super().closeEvent(event)
+
+    def _wait_for_test_thread(self, timeout_ms: int = 5000) -> None:
+        """等待后台测试线程结束（页面关闭/应用退出时调用），并清理失效引用。"""
+        thread = getattr(self, "_test_thread", None)
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.wait(timeout_ms)
+        except RuntimeError:
+            # C++ 对象已被销毁（线程早已结束），仅需清理悬空引用
+            self._test_thread = None
+            return
+        if not thread.isRunning():
+            # 线程已结束：释放引用；finished 槽可能因事件循环退出/页面隐藏不再投递
+            self._test_thread = None
 
     def _pick_output_dir(self):
         path = QFileDialog.getExistingDirectory(

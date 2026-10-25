@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from formora.core.errors import DocumentFormatError
 from formora.core.template_parser import (
     _LOOP_BODY_RE,
     _LOOP_FIELD_RE,
@@ -9,6 +12,7 @@ from formora.core.template_parser import (
     _detect_sections,
     _extract_all_text,
     _find_placeholders,
+    parse_template,
 )
 
 
@@ -62,10 +66,17 @@ class TestDetectSections:
         sections = _detect_sections(["一、实验名称", "二、实验目的"])
         assert sections == {"实验名称": "一、实验名称", "实验目的": "二、实验目的"}
 
-    def test_keyword_late_in_paragraph_not_detected(self):
-        """「实验目的」出现在前 8 字符内且段落短，应识别为章节标题。"""
+    def test_numbered_heading_detected(self):
+        """「1. 实验目的」「（1）实验环境」等编号标题应识别为章节。"""
+        sections = _detect_sections(["1. 实验目的", "（1）实验环境", "第一章 实验步骤"])
+        assert sections.get("实验目的") == "1. 实验目的"
+        assert sections.get("实验环境") == "（1）实验环境"
+        assert sections.get("实验步骤") == "第一章 实验步骤"
+
+    def test_body_sentence_with_prefix_not_detected(self):
+        """关键字前有正文前缀（「本次」）时，短句不应误判为章节标题。"""
         sections = _detect_sections(["本次实验的目的是验证流程"])
-        assert "实验目的" in sections
+        assert "实验目的" not in sections
 
     def test_long_paragraph_not_detected(self):
         """标题段落过长（>50 字符）不视为章节标题。"""
@@ -103,9 +114,59 @@ class TestExtractAllText:
         texts = _extract_all_text(doc.element)
         assert "单元格内容" in texts
 
+    def test_concatenates_fragmented_runs(self):
+        """同一段落内被拆成多个 w:t 的文本应按段落拼接（如 {{姓名}} 拆成 {{姓/名}}）。"""
+        from docx import Document
+
+        doc = Document()
+        p = doc.add_paragraph()
+        p.add_run("{{姓")
+        p.add_run("名}}")
+        texts = _extract_all_text(doc.element)
+        assert "{{姓名}}" in texts
+
     def test_ignores_empty_text_nodes(self):
         from docx import Document
 
         doc = Document()
         doc.add_paragraph("   ")
         assert _extract_all_text(doc.element) == []
+
+
+class TestParseTemplateFixes:
+    def test_unclosed_loop_raises_friendly_error(self, tmp_path):
+        """未闭合循环块应报友好错误，而不是静默跳过。"""
+        from docx import Document
+
+        doc = Document()
+        doc.add_paragraph("{% for row in rows %}{{ row['项目'] }}")
+        path = tmp_path / "unclosed_loop.docx"
+        doc.save(str(path))
+        with pytest.raises(DocumentFormatError):
+            parse_template(path)
+
+    def test_header_footer_split_placeholder_detected(self, tmp_path):
+        """页眉中跨 w:t 拆分的占位符应被完整识别。"""
+        from docx import Document
+
+        doc = Document()
+        header_para = doc.sections[0].header.paragraphs[0]
+        header_para.add_run("{{实")
+        header_para.add_run("验名称}}")
+        path = tmp_path / "header_placeholder.docx"
+        doc.save(str(path))
+        info = parse_template(path)
+        assert "实验名称" in info.placeholders
+        assert info.has_header_footer
+
+    def test_balanced_loop_still_parses(self, tmp_path):
+        """成对闭合的循环块不应报错，循环体字段也不应进入顶层占位符。"""
+        from docx import Document
+
+        doc = Document()
+        doc.add_paragraph("{% for row in rows %}{{ row['项目'] }}{% endfor %}")
+        path = tmp_path / "balanced_loop.docx"
+        doc.save(str(path))
+        info = parse_template(path)
+        assert "row" in info.loop_blocks
+        assert "row['项目']" not in info.placeholders
