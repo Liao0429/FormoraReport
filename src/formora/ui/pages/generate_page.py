@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from formora.core.errors import FormoraError
+from formora.ui.errors import show_error, show_warning
 from formora.ui.widgets import Card, primary_button, secondary_button
 
 
@@ -98,8 +99,8 @@ class GeneratePage(QWidget):
             out = self.state.output_path.replace(".docx", ".pdf")
             pdf_exporter.export_pdf(self.state.output_path, out)
             QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
-        except FormoraError as e:
-            QMessageBox.warning(self, "导出失败", str(e))
+        except Exception as exc:
+            show_warning(self, exc, "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。", title="导出 PDF 失败", prefix="导出 PDF")
 
     def _export_batch_pdf(self):
         """把当前批次目录下的所有 DOCX 转为 PDF（串行，避免 LibreOffice 冲突）。"""
@@ -115,7 +116,11 @@ class GeneratePage(QWidget):
         if not docx_files:
             QMessageBox.warning(self, "提示", "批次目录里没有 DOCX 文件。")
             return
-        ok, failed = batch_export_pdf(docx_files)
+        try:
+            ok, failed = batch_export_pdf(docx_files)
+        except Exception as exc:
+            show_error(self, exc, "批量导出 PDF 失败，请检查 LibreOffice 是否可用。", title="批量导出 PDF 失败", prefix="批量导出 PDF")
+            return
         msg = f"✅ 已导出 {ok} 份 PDF"
         if failed:
             msg += f"\n\n失败 {len(failed)} 份：\n" + "\n".join(failed[:5])

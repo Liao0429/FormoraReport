@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from formora.core.errors import FormoraError
+from formora.ui.errors import inline_message, log_exception, show_warning
 from formora.ui.widgets import Card, primary_button, secondary_button
 
 
@@ -162,8 +163,9 @@ class PreviewPage(QWidget):
             if self._ai_sources_text():
                 base += "\n" + self._ai_sources_text()
             self.text_edit.setPlainText(base)
-        except Exception as e:
-            self.text_edit.setPlainText(f"读取预览失败：{e}")
+        except Exception as exc:
+            log_exception(exc, prefix="读取预览")
+            self.text_edit.setPlainText(inline_message(exc, "读取预览失败。"))
 
     def _export_pdf(self):
         if not self.state.output_path:
@@ -175,5 +177,5 @@ class PreviewPage(QWidget):
             out = self.state.output_path.replace(".docx", ".pdf")
             pdf_exporter.export_pdf(self.state.output_path, out)
             QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
-        except FormoraError as e:
-            QMessageBox.warning(self, "导出失败", str(e))
+        except Exception as exc:
+            show_warning(self, exc, "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。", title="导出 PDF 失败", prefix="导出 PDF")

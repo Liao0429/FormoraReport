@@ -2,9 +2,25 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 与语义化版本（SemVer）。
 
-## [Unreleased]
+## [2.13.0] - 2026-10-25
 
-（下一版本待规划：错误处理统一出口、AI 成本缓存、自动映射增强等方案评审已就绪。）
+### Added
+
+- **错误处理统一出口 `ui/errors.py`**（第一阶段）：
+  - 新增 `src/formora/ui/errors.py`，把「选文案 + 记日志 + 弹窗」收敛到统一 helper（`show_error` / `show_warning` / `log_exception` / `inline_message` / `user_message` / `is_expected`）
+  - 业务异常显示 `user_message`，未知异常/BugError 显示兜底文案并记录完整堆栈，不再向用户泄露内部细节
+- **`tests/test_ui_errors.py`**：6 项单元测试覆盖 `is_expected` / `user_message` / `inline_message`
+
+### Changed
+
+- **preview_page**：`refresh` 读取失败、`_export_pdf` 导出失败改用统一异常出口（记日志 + 安全文案 + 弹窗）
+- **generate_page**：`_export_pdf`、`_export_batch_pdf` 改用统一异常出口（批量导出失败不再裸抛）
+
+### 兼容性
+
+- **295 项自动化测试通过**（新增 6 项）。
+
+## [Unreleased]
 
 ## [2.12.0] - 2026-10-25
 
