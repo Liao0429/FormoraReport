@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
 
 from formora.ai import client
 from formora.core.chart import BLUE_ORANGE_COLORS
-from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 
 
 class _TestConnectionThread(QThread):
     """后台执行 AI 连接测试，避免阻塞 UI 主线程（最长 20s）。"""
+
     finished_ok = Signal(str)
     failed = Signal(str)
 
@@ -163,7 +163,7 @@ class SettingsPage(QWidget):
         temp = ai.get("temperature", 0.2)
         if temp is None:
             temp = 0.2
-        self.ai_temp.setValue(int(round(float(temp) * 100)))
+        self.ai_temp.setValue(round(float(temp) * 100))
 
         chart_cfg = cfg.get("chart", {}) or {}
         if not isinstance(chart_cfg, dict):
@@ -207,7 +207,9 @@ class SettingsPage(QWidget):
         if not isinstance(chart_cfg, dict):
             chart_cfg = {}
         chart_cfg["colors"] = (
-            [] if self.chart_colors_combo.currentIndex() == 0 else list(BLUE_ORANGE_COLORS)
+            []
+            if self.chart_colors_combo.currentIndex() == 0
+            else list(BLUE_ORANGE_COLORS)
         )
         chart_cfg["dpi"] = int(self.chart_dpi_combo.currentText())
         chart_cfg["grid"] = self.chart_grid_check.isChecked()

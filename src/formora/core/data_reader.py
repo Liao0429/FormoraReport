@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import math
-
 from pathlib import Path
 
 from .errors import DocumentFormatError, ExternalDependencyError, UserError

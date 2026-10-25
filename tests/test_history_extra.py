@@ -61,8 +61,10 @@ class TestGetTask:
         hist_path = tmp_path / "history.jsonl"
         monkeypatch.setattr(history, "HISTORY_PATH", hist_path)
         hist_path.write_text(
-            json.dumps({"id": "abc", "name": "t1"}, ensure_ascii=False) + "\n"
-            + json.dumps({"id": "def", "name": "t2"}, ensure_ascii=False) + "\n",
+            json.dumps({"id": "abc", "name": "t1"}, ensure_ascii=False)
+            + "\n"
+            + json.dumps({"id": "def", "name": "t2"}, ensure_ascii=False)
+            + "\n",
             encoding="utf-8",
         )
         entry = history.get_task("def")
@@ -129,11 +131,13 @@ class TestLoadHistory:
         hist_path = tmp_path / "history.jsonl"
         monkeypatch.setattr(history, "HISTORY_PATH", hist_path)
         hist_path.write_text(
-            json.dumps({"id": "1", "name": "good"}, ensure_ascii=False) + "\n"
+            json.dumps({"id": "1", "name": "good"}, ensure_ascii=False)
+            + "\n"
             + "\n"
             + "this is not json\n"
             + "\n"
-            + json.dumps({"id": "2", "name": "good2"}, ensure_ascii=False) + "\n",
+            + json.dumps({"id": "2", "name": "good2"}, ensure_ascii=False)
+            + "\n",
             encoding="utf-8",
         )
         entries = history.load_history()

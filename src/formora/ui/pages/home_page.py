@@ -107,7 +107,7 @@ class HomePage(QWidget):
             return
         try:
             self._apply_history(entry)
-        except Exception as e:  # noqa: BLE001 - 统一弹友好提示
+        except Exception as e:
             show_error(
                 self,
                 e,

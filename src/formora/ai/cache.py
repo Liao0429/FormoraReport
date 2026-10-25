@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-__all__ = ["AICache", "make_cache_key", "default_cache_path"]
+__all__ = ["AICache", "default_cache_path", "make_cache_key"]
 
 _CACHE_VERSION = 1
 

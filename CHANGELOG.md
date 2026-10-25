@@ -88,6 +88,33 @@
 
 - **350 项自动化测试通过**（+48）。
 
+## [2.19.0] - 2026-10-26
+
+### Added
+
+- **README 异步批量 API 章节落地**（双语同步）：新增「异步批量生成」专节（curl 提交 202 + batch_id 示例、轮询任务状态直到 done/failed、响应 JSON 示例），端点表新增 Mode 列标注异步端点，版本引用统一 v2.18.0
+- **UI 冒烟测试全面增强**（`scripts/ui_smoke_test.py`）：覆盖 首页→导入→映射→生成→预览→导出 PDF→设置 全页面流转；设置页图表样式卡片修改/保存/回显验证；异常路径（非模板文件导入弹错误不崩溃）；临时目录完全隔离可重复运行；断言统一用 `isHidden`
+- **性能基准文档化**：`docs/benchmark.md`（5 次实测 37.9ms/份，优化前后对比）
+- **第三方许可证清单**：`THIRD_PARTY_NOTICES.md`（103 个依赖，标注 AGPL/GPL/LGPL/MPL 传染性许可证）
+- **ruff 配置化**：新增 `ruff.toml`（忽略 BLE001/S110/S112 项目约定，`line-ending=auto` 保留 CRLF/LF）；自动修复 39 处 + 手动 8 处，`ruff format` 规范化 26 个文件
+- **Inno Setup 一键安装包脚本**：`installer.iss` + `build_installer.bat` + `docs/installer-build.md`（免 UAC 可选、快捷方式、卸载注册、静默安装）
+- **`.dockerignore`**：构建上下文排除 .venv/build/dist/.git 等（约省 450MB 上下文）
+- **Docker 部署静态验证报告**：配置与代码逐项对齐（LibreOffice/字体/端口/健康检查/环境变量/数据卷/非 root），无 P1 阻塞问题
+- **打包产物功能验证报告**：exe 启动真实运行 Qt 事件循环、内嵌 formora 37 个模块与模板/字体/翻译完整、无 API 依赖残留
+
+### Changed
+
+- **`api_server.py` CLI 参数化**：`--host`（默认 127.0.0.1）/`--port`（默认 8000）/`--reload`；启动打印版本号、可访问地址（含局域网 IP）、Swagger `/docs`、API Key 鉴权状态；优雅退出清理临时目录（FastAPI lifespan）
+- **跨平台兼容性审查报告**：0 个 P0 崩溃点；2 个 P1 建议（非 Windows 保存密钥异常未捕获、密钥跨平台持久化）与 4 个 P2 建议已文档化
+
+### Fixed
+
+- ruff 修复：`api.py` TRY401/B008（`Annotated` 替代 `Depends` 裸类型）、`import_page`/`report_service`/`generator`/`window_effects` 若干 lint 告警
+
+### 兼容性
+
+- **468 项自动化测试全部通过**。
+
 ## [2.18.0] - 2026-10-26
 
 ### Added

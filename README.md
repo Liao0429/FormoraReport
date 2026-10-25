@@ -11,7 +11,7 @@ Automated lab report generator for Windows — import a DOCX report template, ex
 
 ## Downloads
 
-Latest release: **v2.16.0**.
+Latest release: **v2.18.0**.
 
 Grab the latest **single-file portable EXE** from the [Releases page](https://github.com/Liao0429/FormoraReport/releases). Every release ships a `FormoraReport.exe` asset — no Python installation required.
 
@@ -117,7 +117,7 @@ pyinstaller --noconfirm --clean --name FormoraReport --windowed \
 
 ## REST API
 
-FormoraReport ships a lightweight FastAPI server for headless / remote / mini-program integration. It exposes the same core pipeline (template parsing → data reading → mapping → generation → download → PDF → text extraction) over HTTP, and reports the current version (`2.16.0`) from `/api/health`.
+FormoraReport ships a lightweight FastAPI server for headless / remote / mini-program integration. It exposes the same core pipeline (template parsing → data reading → mapping → generation → download → PDF → text extraction) over HTTP, and reports the current version (`2.18.0`) from `/api/health` (along with cache, task, and batch counts).
 
 **Start the server:**
 
@@ -137,18 +137,20 @@ curl -H "Authorization: Bearer ***" http://127.0.0.1:8000/api/data/read
 
 **Endpoints:**
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Health check, version, cache/task counts, auth & rate-limit status (exempt from rate limiting) |
-| `POST` | `/api/template/parse` | Upload a DOCX template → placeholders, sections, image slots |
-| `POST` | `/api/data/read` | Upload data (CSV/XLSX/TXT/MD/PDF) → columns + preview rows |
-| `POST` | `/api/image/upload` | Upload an image → `file_id` for image mappings |
-| `POST` | `/api/mapping/auto` | Auto-match template placeholders ↔ data columns |
-| `POST` | `/api/report/generate` | Generate a single DOCX report → `task_id` + download URL |
-| `POST` | `/api/report/generate_batch` | Generate one DOCX per data row (JSON or multipart) |
-| `GET` | `/api/report/{task_id}/download` | Download a generated report |
-| `POST` | `/api/report/pdf` | Convert a generated DOCX to PDF |
-| `POST` | `/api/report/{task_id}/text` | Extract report text (preview / AI review) |
+| Method | Endpoint | Mode | Description |
+|---|---|---|---|
+| `GET` | `/api/health` | — | Health check, version, cache/task/batch counts, auth & rate-limit status (exempt from rate limiting) |
+| `POST` | `/api/template/parse` | — | Upload a DOCX template → placeholders, sections, image slots |
+| `POST` | `/api/data/read` | — | Upload data (CSV/XLSX/TXT/MD/PDF) → columns + preview rows |
+| `POST` | `/api/image/upload` | — | Upload an image → `file_id` for image mappings |
+| `POST` | `/api/mapping/auto` | — | Auto-match template placeholders ↔ data columns |
+| `POST` | `/api/report/generate` | — | Generate a single DOCX report → `task_id` + download URL |
+| `POST` | `/api/report/generate_batch` | Sync | Generate one DOCX per data row (JSON or multipart); blocks until done |
+| `POST` | `/api/report/generate_batch_async` | **Async** | Submit a batch → `202 Accepted` + `batch_id`; rendered in the background |
+| `GET` | `/api/report/batch/{batch_id}` | **Async** | Poll async batch status / progress / files |
+| `GET` | `/api/report/{task_id}/download` | — | Download a generated report |
+| `POST` | `/api/report/pdf` | — | Convert a generated DOCX to PDF |
+| `POST` | `/api/report/{task_id}/text` | — | Extract report text (preview / AI review) |
 
 **Batch generation — `POST /api/report/generate_batch`:**
 
@@ -177,7 +179,80 @@ curl -H "Authorization: Bearer ***" \
 
 Response: `total` / `generated` / `failed`, plus a `files` list with `file_name`, `task_id`, and `download_url`, and an `errors` list for failed rows.
 
-> **Synchronous in v2.16.0**: the request blocks until all reports are generated — well suited for small/medium batches. An **asynchronous task-queue design** is documented as the next step: the endpoint would return `batch_id` (`202 Accepted`) and clients would poll `GET /api/report/batch/{batch_id}` for status and file lists.
+> **Two modes**: `generate_batch` runs **synchronously** (the request blocks until every report is ready — well suited for small/medium batches); `generate_batch_async` returns immediately with a `batch_id` and processes the batch in the background (recommended for large batches / concurrent clients).
+
+### Asynchronous batch generation — `POST /api/report/generate_batch_async`
+
+Accepts the same JSON or `multipart/form-data` payload as the synchronous endpoint. The request is validated immediately, a background thread renders the reports, and the server answers `202 Accepted` with a `batch_id`:
+
+```bash
+curl -H "Authorization: Bearer ***" -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8000/api/report/generate_batch_async -d '{
+    "template_file_id": "tpl_...",
+    "data_file_id": "data_...",
+    "auto_chart": true,
+    "mappings": [
+      {"template_field": "姓名", "source_type": "column", "source_column": "姓名"}
+    ]
+  }'
+```
+
+Submit response (`202 Accepted`):
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "pending",
+  "total": 12,
+  "query_url": "/api/report/batch/batch_1a2b3c4d5e6f..."
+}
+```
+
+Poll the task with `GET /api/report/batch/{batch_id}` until `status` becomes `done` (or `failed`):
+
+```bash
+curl -H "Authorization: Bearer ***" \
+  http://127.0.0.1:8000/api/report/batch/batch_1a2b3c4d5e6f...
+```
+
+Status response while the batch is still processing:
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "running",
+  "total": 12,
+  "completed": 5,
+  "files": [],
+  "errors": [],
+  "error": null,
+  "created_at": 1730000000.0
+}
+```
+
+Status response once finished (`status: "done"`):
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "done",
+  "total": 12,
+  "completed": 12,
+  "files": [
+    {
+      "file_name": "实验报告_1.docx",
+      "path": "/tmp/formora_api_abc123/batch_output/实验报告_1.docx",
+      "task_id": "task_9f8e7d6c...",
+      "download_url": "/api/report/task_9f8e7d6c.../download"
+    }
+  ],
+  "errors": [],
+  "error": null,
+  "created_at": 1730000000.0
+}
+```
+
+If the whole batch fails, `status` is `failed` and `error` carries the message; per-row failures appear in `errors`. Batch records are cleaned up by the same TTL mechanism as single files.
 
 **Rate limiting:** an in-memory sliding-window limiter allows **120 requests per minute per client IP** by default. Set `FORMORA_RATE_LIMIT` to override; requests above the limit get `429 Too Many Requests`. `/api/health` is exempt. The limiter is per-process (single worker) — use a shared store (e.g. Redis) or the bundled nginx config for multi-worker deployments.
 
@@ -206,7 +281,7 @@ docker compose up -d --build
 
 # 3. Verify
 curl http://127.0.0.1:8000/api/health
-# {"status":"ok","version":"2.16.0","files_cached":0,"tasks":0,"auth_enabled":true,"rate_limit_per_minute":120}
+# {"status":"ok","version":"2.18.0","files_cached":0,"tasks":0,"batches":0,"auth_enabled":true,"rate_limit_per_minute":120}
 
 # 4. Swagger UI
 # http://127.0.0.1:8000/docs
@@ -281,7 +356,6 @@ Issues and Pull Requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING
 - OCR enhancement (optional PaddleOCR)
 - Template center (save/manage common templates)
 - Richer AI structured extraction with source-tracking visualization
-- Asynchronous batch API task queue (`batch_id` + status polling)
 - Installer (NSIS/Inno Setup)
 - More document format support
 

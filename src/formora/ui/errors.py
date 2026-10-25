@@ -14,7 +14,6 @@ QMessageBox / logger 样板。
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
@@ -41,7 +40,7 @@ def user_message(exc: BaseException, fallback: str) -> str:
 def log_exception(
     exc: BaseException,
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     prefix: str = "",
 ) -> str:
     """按异常类型记录日志（不弹窗），返回供内联展示的安全文案。"""
@@ -56,13 +55,13 @@ def log_exception(
 
 
 def show_error(
-    parent: Optional[QWidget],
+    parent: QWidget | None,
     exc: BaseException,
     fallback: str,
     *,
     title: str = "操作失败",
     level: str = "critical",
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     prefix: str = "",
 ) -> str:
     """统一异常出口：记日志 + 弹窗，返回展示给用户的文案。"""
@@ -77,18 +76,23 @@ def show_error(
 
 
 def show_warning(
-    parent: Optional[QWidget],
+    parent: QWidget | None,
     exc: BaseException,
     fallback: str,
     *,
     title: str = "操作失败",
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     prefix: str = "",
 ) -> str:
     """warning 级别的便捷封装。"""
     return show_error(
-        parent, exc, fallback,
-        title=title, level="warning", logger=logger, prefix=prefix,
+        parent,
+        exc,
+        fallback,
+        title=title,
+        level="warning",
+        logger=logger,
+        prefix=prefix,
     )
 
 

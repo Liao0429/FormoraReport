@@ -163,9 +163,9 @@ class ImportPage(QWidget):
         except FormoraError as e:
             logger.error("解析模板/数据失败（用户可见错误）: %s", e)
             QMessageBox.critical(self, "解析失败", e.user_message)
-        except Exception as e:
+        except Exception:
             # 未知异常：记录详细堆栈供排查，用户只看友好提示，避免暴露内部细节。
-            logger.exception("解析模板/数据时发生未预期的错误: %s", e)
+            logger.exception("解析模板/数据时发生未预期的错误")
             QMessageBox.critical(
                 self,
                 "解析失败",

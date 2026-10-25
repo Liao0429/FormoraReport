@@ -51,7 +51,7 @@ class _BatchPdfWorker(QThread):
             self.done.emit(ok, failed)
         except BatchExportCancelledError:
             self.cancelled.emit()
-        except Exception as exc:  # noqa: BLE001 - 统一转用户可读错误
+        except Exception as exc:
             self.failed.emit(exc)
 
 
@@ -73,8 +73,9 @@ class _SinglePdfWorker(QThread):
             out = os.path.splitext(self._docx_path)[0] + ".pdf"
             pdf_exporter.export_pdf(self._docx_path, out)
             self.done.emit(out)
-        except Exception as exc:  # noqa: BLE001 - 统一转用户可读错误
+        except Exception as exc:
             self.failed.emit(exc)
+
 
 class GeneratePage(QWidget):
     def __init__(self, state, navigate):
@@ -175,7 +176,13 @@ class GeneratePage(QWidget):
         QMessageBox.information(self, "导出成功", f"PDF 已导出：\n{out}")
 
     def _on_single_pdf_failed(self, exc) -> None:
-        show_error(self, exc, "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。", title="导出 PDF 失败", prefix="导出 PDF")
+        show_error(
+            self,
+            exc,
+            "导出 PDF 失败，请确认已安装 LibreOffice 且文件未被占用。",
+            title="导出 PDF 失败",
+            prefix="导出 PDF",
+        )
 
     def _on_single_pdf_thread_finished(self) -> None:
         if self._single_thread is not self.sender():
@@ -235,7 +242,13 @@ class GeneratePage(QWidget):
         QMessageBox.information(self, "批量导出 PDF", "已取消批量导出。")
 
     def _on_batch_failed(self, exc) -> None:
-        show_error(self, exc, "批量导出 PDF 失败，请检查 LibreOffice 是否可用。", title="批量导出 PDF 失败", prefix="批量导出 PDF")
+        show_error(
+            self,
+            exc,
+            "批量导出 PDF 失败，请检查 LibreOffice 是否可用。",
+            title="批量导出 PDF 失败",
+            prefix="批量导出 PDF",
+        )
 
     def _on_batch_thread_finished(self) -> None:
         if self._batch_thread is not self.sender():

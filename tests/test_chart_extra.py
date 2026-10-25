@@ -43,6 +43,7 @@ class TestMultiLineExtra:
                 ["A", "B"], {"s1": [1.0]}, tmp_path / "x.png"
             )
 
+
 class TestChartStyleConfig:
     """图表样式可配置化：无配置保持现行为，配置后样式生效。"""
 
@@ -101,11 +102,7 @@ class TestChartStyleConfig:
         )
         data = plt.imread(str(img))
         # 柱体应包含配置的红色像素
-        red = (
-            (data[:, :, 0] > 0.8)
-            & (data[:, :, 1] < 0.4)
-            & (data[:, :, 2] < 0.4)
-        )
+        red = (data[:, :, 0] > 0.8) & (data[:, :, 1] < 0.4) & (data[:, :, 2] < 0.4)
         assert red.any()
 
     def test_multi_line_chart_colors_applied(self, tmp_path):
@@ -118,11 +115,7 @@ class TestChartStyleConfig:
             config={"chart": {"colors": ["#1f77b4", "#ff7f0e"]}},
         )
         data = plt.imread(str(img))
-        blue = (
-            (data[:, :, 2] > 0.6)
-            & (data[:, :, 0] < 0.4)
-            & (data[:, :, 1] < 0.6)
-        )
+        blue = (data[:, :, 2] > 0.6) & (data[:, :, 0] < 0.4) & (data[:, :, 1] < 0.6)
         orange = (
             (data[:, :, 0] > 0.9)
             & (data[:, :, 1] > 0.4)
@@ -134,7 +127,9 @@ class TestChartStyleConfig:
     def test_global_config_injection(self, tmp_path):
         import matplotlib.pyplot as plt
 
-        chart.set_chart_config({"chart": {"figsize": [6, 4], "dpi": 100, "grid": False}})
+        chart.set_chart_config(
+            {"chart": {"figsize": [6, 4], "dpi": 100, "grid": False}}
+        )
         try:
             img = chart.generate_line_chart(
                 [1, 2, 3], [1.0, 2.0, 3.0], tmp_path / "global.png"

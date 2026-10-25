@@ -66,7 +66,7 @@ Windows 实验报告自动填写工具 —— 导入实验报告模板、实验�
 
 ## 获取方式
 
-- **发布包（EXE）**：从 [Releases](https://github.com/Liao0429/FormoraReport/releases) 下载 `FormoraReport.zip`，解压后运行 `FormoraReport.exe`。当前最新版为 **v2.16.0**。
+- **发布包（EXE）**：从 [Releases](https://github.com/Liao0429/FormoraReport/releases) 下载 `FormoraReport.zip`，解压后运行 `FormoraReport.exe`。当前最新版为 **v2.18.0**。
 - **从源码构建**：见下文。
 
 ## 安装与使用
@@ -115,7 +115,7 @@ python -m PyInstaller --noconfirm --clean FormoraReport-onefile.spec
 
 ## REST API
 
-FormoraReport 附带一个轻量级 FastAPI 服务，可用于无界面 / 远程 / 小程序集成。它通过 HTTP 暴露同一套核心流程（模板解析 → 数据读取 → 映射 → 生成 → 下载 → PDF → 文本抽取），并通过 `/api/health` 报告当前版本（`2.16.0`）。
+FormoraReport 附带一个轻量级 FastAPI 服务，可用于无界面 / 远程 / 小程序集成。它通过 HTTP 暴露同一套核心流程（模板解析 → 数据读取 → 映射 → 生成 → 下载 → PDF → 文本抽取），并通过 `/api/health` 报告当前版本（`2.18.0`，同时返回缓存、任务与批量任务数量）。
 
 **启动服务：**
 
@@ -135,18 +135,20 @@ curl -H "Authorization: Bearer ***" http://127.0.0.1:8000/api/data/read
 
 **端点列表：**
 
-| 方法 | 端点 | 说明 |
-|---|---|---|
-| `GET` | `/api/health` | 健康检查：版本、缓存/任务数量、鉴权与限流状态（不限流） |
-| `POST` | `/api/template/parse` | 上传 DOCX 模板 → 占位符、章节、图片位 |
-| `POST` | `/api/data/read` | 上传数据（CSV/XLSX/TXT/MD/PDF）→ 列名 + 预览行 |
-| `POST` | `/api/image/upload` | 上传图片 → 返回 `file_id` 供图片映射使用 |
-| `POST` | `/api/mapping/auto` | 自动匹配模板占位符 ↔ 数据列 |
-| `POST` | `/api/report/generate` | 生成单份 DOCX 报告 → `task_id` + 下载 URL |
-| `POST` | `/api/report/generate_batch` | 按数据行批量生成多份 DOCX（JSON 或 multipart） |
-| `GET` | `/api/report/{task_id}/download` | 下载已生成的报告 |
-| `POST` | `/api/report/pdf` | 把已生成的 DOCX 转为 PDF |
-| `POST` | `/api/report/{task_id}/text` | 抽取报告文本（预览 / AI 审查） |
+| 方法 | 端点 | 模式 | 说明 |
+|---|---|---|---|
+| `GET` | `/api/health` | — | 健康检查：版本、缓存/任务/批量任务数量、鉴权与限流状态（不限流） |
+| `POST` | `/api/template/parse` | — | 上传 DOCX 模板 → 占位符、章节、图片位 |
+| `POST` | `/api/data/read` | — | 上传数据（CSV/XLSX/TXT/MD/PDF）→ 列名 + 预览行 |
+| `POST` | `/api/image/upload` | — | 上传图片 → 返回 `file_id` 供图片映射使用 |
+| `POST` | `/api/mapping/auto` | — | 自动匹配模板占位符 ↔ 数据列 |
+| `POST` | `/api/report/generate` | — | 生成单份 DOCX 报告 → `task_id` + 下载 URL |
+| `POST` | `/api/report/generate_batch` | 同步 | 按数据行批量生成多份 DOCX（JSON 或 multipart）；阻塞直到完成 |
+| `POST` | `/api/report/generate_batch_async` | **异步** | 提交批量任务 → `202 Accepted` + `batch_id`；后台线程生成 |
+| `GET` | `/api/report/batch/{batch_id}` | **异步** | 查询异步批量任务的状态/进度/结果 |
+| `GET` | `/api/report/{task_id}/download` | — | 下载已生成的报告 |
+| `POST` | `/api/report/pdf` | — | 把已生成的 DOCX 转为 PDF |
+| `POST` | `/api/report/{task_id}/text` | — | 抽取报告文本（预览 / AI 审查） |
 
 **批量生成 — `POST /api/report/generate_batch`：**
 
@@ -175,7 +177,80 @@ curl -H "Authorization: Bearer ***" \
 
 响应包含 `total` / `generated` / `failed`，以及 `files` 列表（每项含 `file_name`、`task_id`、`download_url`）和失败行的 `errors` 列表。
 
-> **v2.16.0 中为同步实现**：请求会阻塞直到全部报告生成完毕，适合中小批量。**异步任务队列方案**已作为下一步文档化：端点将返回 `batch_id`（`202 Accepted`），客户端通过 `GET /api/report/batch/{batch_id}` 轮询状态与文件列表。
+> **两种模式**：`generate_batch` 为**同步**执行（请求阻塞直到全部报告生成完毕，适合中小批量）；`generate_batch_async` 立即返回 `batch_id` 并在后台线程生成（适合大批量 / 并发客户端）。
+
+### 异步批量生成 — `POST /api/report/generate_batch_async`
+
+请求体与同步端点完全一致（JSON 或 multipart）。校验通过后立即返回 `202 Accepted` 与 `batch_id`，后台线程执行生成：
+
+```bash
+curl -H "Authorization: Bearer ***" -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:8000/api/report/generate_batch_async -d '{
+    "template_file_id": "tpl_...",
+    "data_file_id": "data_...",
+    "auto_chart": true,
+    "mappings": [
+      {"template_field": "姓名", "source_type": "column", "source_column": "姓名"}
+    ]
+  }'
+```
+
+提交响应（`202 Accepted`）：
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "pending",
+  "total": 12,
+  "query_url": "/api/report/batch/batch_1a2b3c4d5e6f..."
+}
+```
+
+通过 `GET /api/report/batch/{batch_id}` 轮询任务状态，直到 `status` 变为 `done`（或 `failed`）：
+
+```bash
+curl -H "Authorization: Bearer ***" \
+  http://127.0.0.1:8000/api/report/batch/batch_1a2b3c4d5e6f...
+```
+
+处理中的状态响应：
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "running",
+  "total": 12,
+  "completed": 5,
+  "files": [],
+  "errors": [],
+  "error": null,
+  "created_at": 1730000000.0
+}
+```
+
+完成后的状态响应（`status: "done"`）：
+
+```json
+{
+  "batch_id": "batch_1a2b3c4d5e6f...",
+  "status": "done",
+  "total": 12,
+  "completed": 12,
+  "files": [
+    {
+      "file_name": "实验报告_1.docx",
+      "path": "/tmp/formora_api_abc123/batch_output/实验报告_1.docx",
+      "task_id": "task_9f8e7d6c...",
+      "download_url": "/api/report/task_9f8e7d6c.../download"
+    }
+  ],
+  "errors": [],
+  "error": null,
+  "created_at": 1730000000.0
+}
+```
+
+整个批次失败时 `status` 为 `failed`，`error` 字段携带错误信息；单行失败记录在 `errors` 中。批量任务记录与单文件一样受 TTL 清理机制管理。
 
 **限流：** 内存滑动窗口限流器默认允许**每客户端 IP 每分钟 120 次请求**。可通过 `FORMORA_RATE_LIMIT` 覆盖；超限返回 `429 Too Many Requests`。`/api/health` 豁免。限流为单进程实现（单 worker）——多 worker 部署请使用共享存储（如 Redis）或随附的 nginx 配置。
 
@@ -204,7 +279,7 @@ docker compose up -d --build
 
 # 3. 验证
 curl http://127.0.0.1:8000/api/health
-# {"status":"ok","version":"2.16.0","files_cached":0,"tasks":0,"auth_enabled":true,"rate_limit_per_minute":120}
+# {"status":"ok","version":"2.18.0","files_cached":0,"tasks":0,"batches":0,"auth_enabled":true,"rate_limit_per_minute":120}
 
 # 4. Swagger UI
 # http://127.0.0.1:8000/docs
@@ -229,7 +304,7 @@ python -m PyInstaller --noconfirm --clean FormoraReport-onefile.spec
 
 ## 下载
 
-从 [Releases 发布页](https://github.com/Liao0429/FormoraReport/releases) 获取最新的**单文件便携版 EXE**。每个版本都附带 `FormoraReport.exe` 资产，解压即用，无需安装。当前最新版为 **v2.16.0**。
+从 [Releases 发布页](https://github.com/Liao0429/FormoraReport/releases) 获取最新的**单文件便携版 EXE**。每个版本都附带 `FormoraReport.exe` 资产，解压即用，无需安装。当前最新版为 **v2.18.0**。
 
 ## 测试
 
@@ -282,7 +357,6 @@ python -m pytest tests/ -q
 - OCR 增强（PaddleOCR 可选）
 - 模板中心（保存/管理常用模板）
 - 更丰富的 AI 结构化提取与来源追踪可视化
-- 批量 API 异步任务队列（`batch_id` + 状态轮询）
 - 安装包（NSIS/Inno Setup）
 - 更多文档格式支持
 

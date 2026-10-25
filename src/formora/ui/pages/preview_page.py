@@ -33,7 +33,7 @@ class _ReviewThread(QThread):
     def run(self):
         try:
             self.result_ready.emit(self._fn(*self._args, **self._kwargs))
-        except Exception as e:  # noqa: BLE001 - 统一交给 ui.errors 分类
+        except Exception as e:
             self.error_raised.emit(e)
 
 
@@ -54,7 +54,7 @@ class _PdfExportThread(QThread):
 
             pdf_exporter.export_pdf(self._docx_path, self._output_pdf)
             self.done.emit(self._output_pdf)
-        except Exception as e:  # noqa: BLE001 - 统一交给 ui.errors 分类
+        except Exception as e:
             self.failed.emit(e)
 
 

@@ -17,14 +17,17 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 import threading
 import time
 import uuid
 from collections import deque
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -151,10 +154,25 @@ class RateLimitMiddleware:
 
 _RATE_LIMITER = _RateLimiter(RATE_LIMIT_PER_MINUTE)
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """应用生命周期：关闭时清理临时工作目录。
+
+    配合 api_server.py 的优雅退出（Ctrl+C）使用；reload / TestClient 等
+    任意承载方式下，应用关闭都会执行本清理。
+    """
+    yield
+    try:
+        shutil.rmtree(_WORK_DIR, ignore_errors=True)
+    except Exception:
+        logger.warning("清理 API 临时目录失败: %s", _WORK_DIR, exc_info=True)
+
+
 app = FastAPI(
     title="FormoraReport API",
     description="实验报告自动生成引擎 REST 接口",
     version=formora.__version__,
+    lifespan=_lifespan,
 )
 
 # 限流中间件注册在 CORS 之前：CORS 最外层处理预检，429 响应同样带 CORS 头
@@ -215,7 +233,7 @@ def _prune_expired() -> None:
     """清理过期文件与超容量的最旧条目，并删除对应磁盘文件，避免内存/磁盘无限增长。"""
     now = _now()
 
-    def _drop(records: dict[str, "_FileRecord | _TaskRecord"], key: str) -> None:
+    def _drop(records: dict[str, _FileRecord | _TaskRecord], key: str) -> None:
         """弹出记录并同步删除磁盘文件，保证内存字典与磁盘一致。"""
         rec = records.pop(key, None)
         if rec is not None:
@@ -394,8 +412,8 @@ def _register_task(path: Path, kind: str) -> str:
 async def _parse_batch_request(request: Request) -> GenerateBatchRequest:
     """解析批量生成请求体（JSON 或 multipart），返回 GenerateBatchRequest。"""
     content_type = request.headers.get("content-type", "")
-    is_form = content_type.startswith("multipart/form-data") or content_type.startswith(
-        "application/x-www-form-urlencoded"
+    is_form = content_type.startswith(
+        ("multipart/form-data", "application/x-www-form-urlencoded")
     )
     req: GenerateBatchRequest
     if is_form:
@@ -405,13 +423,20 @@ async def _parse_batch_request(request: Request) -> GenerateBatchRequest:
         try:
             mappings_data = json.loads(mappings_raw)
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组字符串")
+            raise HTTPException(
+                status_code=400, detail="mappings 必须是 JSON 数组字符串"
+            )
         if not isinstance(mappings_data, list):
             raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组")
         auto_chart_raw = form.get("auto_chart")
         auto_chart = None
         if auto_chart_raw is not None:
-            auto_chart = str(auto_chart_raw).strip().lower() in ("1", "true", "yes", "on")
+            auto_chart = str(auto_chart_raw).strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "on",
+            )
         try:
             req = GenerateBatchRequest(
                 template_file_id=template_file_id,
@@ -477,7 +502,7 @@ def _prepare_batch(
     if missing_cols:
         raise HTTPException(
             status_code=400,
-            detail=f"映射的列不存在于数据文件: {', '.join(sorted(set(missing_cols)))}"
+            detail=f"映射的列不存在于数据文件: {', '.join(sorted(set(missing_cols)))}",
         )
     mappings: list[FieldMapping] = []
     for item in req.mappings:
@@ -558,7 +583,7 @@ def _run_batch_worker(
             errors=errors,
         )
     except Exception as e:
-        logger.exception("异步批量生成失败 %s: %s", batch_id, e)
+        logger.exception("异步批量生成失败 %s", batch_id)
         _update(status="failed", error=str(_handle_error(e).detail))
 
 
@@ -581,7 +606,7 @@ def health() -> dict:
 
 @app.post("/api/template/parse")
 async def parse_template(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     _auth: None = Depends(_verify_api_key),
 ) -> dict:
     """上传 DOCX 模板，返回占位符、章节、图片位。"""
@@ -610,7 +635,7 @@ async def parse_template(
 
 @app.post("/api/data/read")
 async def read_data(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     _auth: None = Depends(_verify_api_key),
 ) -> dict:
     """上传数据文件（CSV/Excel/TXT/MD/PDF），返回列名与预览行。"""
@@ -633,7 +658,7 @@ async def read_data(
 
 @app.post("/api/image/upload")
 async def upload_image(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     _auth: None = Depends(_verify_api_key),
 ) -> dict:
     """上传图片（PNG/JPG/WebP/GIF），返回 file_id 供 image 映射/图表使用。"""
@@ -901,9 +926,7 @@ async def generate_batch_async(
 
 
 @app.get("/api/report/batch/{batch_id}")
-def get_batch_status(
-    batch_id: str, _auth: None = Depends(_verify_api_key)
-) -> dict:
+def get_batch_status(batch_id: str, _auth: None = Depends(_verify_api_key)) -> dict:
     """查询异步批量生成任务：状态、进度、生成文件列表或错误。"""
     with _BATCHES_LOCK:
         rec = _BATCHES.get(batch_id)

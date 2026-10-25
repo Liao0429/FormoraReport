@@ -2,9 +2,9 @@
 
 import sys
 import tempfile
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -45,6 +45,7 @@ def test_ai_enabled_default_true():
     tmp = Path(tempfile.mkdtemp()) / "config.json"
     c = Config(tmp)
     assert c.get("ai")["enabled"] is True
+
 
 def test_config_chart_defaults():
     """图表样式配置默认值：颜色/尺寸/DPI/网格/字号。"""

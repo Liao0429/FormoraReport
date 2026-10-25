@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 from formora.core import chart, generator, mapper
 from formora.core.errors import FormoraError
@@ -239,9 +240,12 @@ def _drop_uncovered_image_fields(context: dict, mappings, image_vars: dict) -> N
     """
     covered = set(image_vars.keys())
     for m in mappings:
-        if m.source_type == "image" and m.template_field in context:
-            if m.template_field not in covered:
-                context.pop(m.template_field, None)
+        if (
+            m.source_type == "image"
+            and m.template_field in context
+            and m.template_field not in covered
+        ):
+            context.pop(m.template_field, None)
 
 
 def _output_dir(state: ReportState) -> Path:
@@ -284,7 +288,9 @@ def sanitize_filename(name: str, fallback: str = "未命名") -> str:
     return cleaned or fallback
 
 
-def _versioned_output(state: ReportState, subdir: str = "", suffix: str = "输出") -> Path:
+def _versioned_output(
+    state: ReportState, subdir: str = "", suffix: str = "输出"
+) -> Path:
     """构造带时间戳的输出路径：<outdir>/[subdir/]<task>_<suffix>_<ts>.docx。
 
     若任务已生成过（state.output_path 存在），沿用其目录但追加新时间戳，

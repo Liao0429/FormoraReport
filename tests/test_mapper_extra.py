@@ -81,7 +81,6 @@ class TestResolveValuesEdge:
         assert ctx["备注"] == ""
 
 
-
 class TestApplyAiSuggestions:
     """AI 建议落盘：用户手动填写的映射优先保留，不被 AI 覆盖。"""
 

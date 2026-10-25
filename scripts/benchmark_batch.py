@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """批量生成 100 份报告基准（对比优化前后用）。
 
 用法: ./.venv/Scripts/python.exe scripts/benchmark_batch.py
 输出: 总耗时 ms / 平均 ms 每份 / 成功份数。不写入任何报告文件。
 """
+
 from __future__ import annotations
 
 import sys

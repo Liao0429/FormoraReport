@@ -8,8 +8,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -32,9 +32,8 @@ from formora.core import mapper, validator
 from formora.core.errors import FormoraError
 from formora.services import report_service
 from formora.services.report_service import is_image_field
-from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 from formora.ui.errors import inline_message, log_exception
-
+from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +54,7 @@ class _TaskThread(QThread):
         try:
             result = self._fn(*self._args, **self._kwargs)
             self.result_ready.emit(result)
-        except Exception as e:  # noqa: BLE001 - 统一转成用户可读消息
+        except Exception as e:
             # 业务异常展示 user_message；未知异常统一「操作失败」并记日志，
             # 避免把内部堆栈/异常细节泄露给用户。
             log_exception(e, logger=_LOGGER, prefix="后台任务")
@@ -414,7 +413,7 @@ class MappingPage(QWidget):
             )
         except FormoraError as e:
             self.issues_text.setPlainText(f"校验出错：{e.user_message}")
-        except Exception as e:  # noqa: BLE001 - 未知异常统一兜底
+        except Exception as e:
             log_exception(e, logger=_LOGGER, prefix="校验")
             self.issues_text.setPlainText(f"校验出错：{inline_message(e, '操作失败')}")
         finally:
@@ -559,9 +558,7 @@ class MappingPage(QWidget):
             "你已手动填写的字段不会被 AI 覆盖，生成后请逐项检查再导出。",
         )
         self._set_busy(True)
-        self._ai_thread = _TaskThread(
-            client.try_extract_fields, cfg, materials, fields
-        )
+        self._ai_thread = _TaskThread(client.try_extract_fields, cfg, materials, fields)
         self._ai_thread.result_ready.connect(self._on_ai_done)
         self._ai_thread.error_raised.connect(self._on_ai_error)
         self._ai_thread.start()

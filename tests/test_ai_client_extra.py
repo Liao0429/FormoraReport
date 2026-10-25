@@ -211,9 +211,9 @@ class TestProduceJsonExtra:
         monkeypatch.setattr(cfg, "get_ai_api_key", lambda: "k")
         _install_fake_urlopen(
             monkeypatch,
-            json.dumps(
-                {"choices": [{"message": {"content": "不是JSON"}}]}
-            ).encode("utf-8"),
+            json.dumps({"choices": [{"message": {"content": "不是JSON"}}]}).encode(
+                "utf-8"
+            ),
         )
         with pytest.raises(ExternalDependencyError, match="无法解析为 JSON"):
             ai_client.extract_fields(cfg, "素材", ["实验名称"])

@@ -27,7 +27,7 @@ from formora.core.errors import (
 )
 from formora.services.config import LOG_DIR
 
-__all__ = ["setup_logging", "get_logger", "category_of"]
+__all__ = ["category_of", "get_logger", "setup_logging"]
 
 _LOGGER: logging.Logger | None = None
 

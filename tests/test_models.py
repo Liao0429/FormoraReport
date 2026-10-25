@@ -84,6 +84,7 @@ class TestReportTask:
         assert len(task.id) == 12
         assert ReportTask(name="b", template_path=Path("t.docx")).id != task.id
 
+
 class TestDataSourceLargeFields:
     def test_large_csv_fields_defaults(self):
         ds = DataSource(path=Path("a.csv"), kind="csv")

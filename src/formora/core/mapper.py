@@ -55,7 +55,7 @@ def auto_map(template: TemplateInfo, data: DataSource | None) -> list[FieldMappi
                     break
         # 3) 包含匹配：某列名包含占位符名，或占位符名包含某列名
         if matched_col is None:
-            for norm_c, col in norm_cols.items():
+            for col in norm_cols.values():
                 if np and (np in col or col in np):
                     matched_col = col
                     break

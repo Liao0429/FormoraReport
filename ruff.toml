@@ -1,0 +1,15 @@
+# ruff 配置：全仓库 ruff 规范化约定。
+# 背景：ruff 0.17 默认规则集大幅扩展（新增 BLE001/S110/S112 等），
+# 而本项目的既有约定是：
+#   - 服务/API 层统一 except Exception -> 用户可读错误（避免泄漏内部细节）
+#   - 可选依赖探测、系统能力探测等场景使用 try/except 静默回退（均有注释说明）
+# 因此显式忽略上述三条规则，其余规则保持 ruff 默认。
+# 行宽保持 ruff 默认 88（不额外设置），与早期“ruff format 规范化”一致。
+target-version = "py311"
+
+[lint]
+ignore = ["BLE001", "S110", "S112"]
+
+[format]
+# 默认 "auto"：保留每个文件原有的行尾（CRLF/LF），不强制转换
+line-ending = "auto"

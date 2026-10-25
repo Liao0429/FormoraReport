@@ -475,9 +475,7 @@ class TestCollectImageVars:
         from formora.core.models import FieldMapping
 
         mappings = [
-            FieldMapping(
-                template_field="截图", source_type="image", value="C:/x/a.png"
-            )
+            FieldMapping(template_field="截图", source_type="image", value="C:/x/a.png")
         ]
         state = type("State", (), {"mappings": mappings})()
         image_vars = collect_image_vars(state, auto_chart_enabled=False)
@@ -501,7 +499,9 @@ class TestVersionedOutputSubdir:
 
 
 class TestGenerateBatchRowFailure:
-    def test_generate_batch_row_failure_appends_error(self, tmp_path, monkeypatch, make_config):
+    def test_generate_batch_row_failure_appends_error(
+        self, tmp_path, monkeypatch, make_config
+    ):
         """批量第 2 行生成失败时，errors 含「第2行失败」且成功结果数正确。"""
         from formora.core import generator
         from formora.core.models import DataSource, ReportTask

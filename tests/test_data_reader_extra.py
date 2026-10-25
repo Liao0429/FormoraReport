@@ -112,7 +112,9 @@ class TestImportCompatibility:
     def test_timestamp_serializable(self, tmp_path):
         """Excel 日期列应转为 ISO 字符串（可 JSON 序列化）。"""
         import json
+
         import pandas as pd
+
         p = tmp_path / "dates.xlsx"
         df = pd.DataFrame({"时间": pd.to_datetime(["2026-01-01", "2026-01-02"])})
         df.to_excel(p, index=False)
@@ -129,6 +131,7 @@ class TestImportCompatibility:
         with pytest.raises(DocumentFormatError) as ei:
             data_reader.read_data(p)
         assert "空" in str(ei.value) or "没有可读取" in str(ei.value)
+
 
 class TestLargeCsvStreaming:
     """超大 CSV 流式读取：>20MB 预览模式、流式行数、单行读取。"""
@@ -162,9 +165,7 @@ class TestLargeCsvStreaming:
     def test_iter_csv_rows_streams_all_rows(self, tmp_path):
         p, total_rows = self._make_large_csv(tmp_path)
         ds = data_reader.read_data(p)
-        rows = list(
-            data_reader.iter_csv_rows(p, encoding=ds.encoding, sep=ds.sep)
-        )
+        rows = list(data_reader.iter_csv_rows(p, encoding=ds.encoding, sep=ds.sep))
         assert len(rows) == total_rows
         assert rows[0] == ds.rows[0]
         assert rows[-1]["样本"] == "样本X"
@@ -172,9 +173,7 @@ class TestLargeCsvStreaming:
     def test_load_row(self, tmp_path):
         p, total_rows = self._make_large_csv(tmp_path)
         ds = data_reader.read_data(p)
-        row0 = data_reader.load_row(
-            p, encoding=ds.encoding, sep=ds.sep, row_index=0
-        )
+        row0 = data_reader.load_row(p, encoding=ds.encoding, sep=ds.sep, row_index=0)
         assert row0 == ds.rows[0]
         mid = data_reader.load_row(
             p, encoding=ds.encoding, sep=ds.sep, row_index=total_rows // 2
@@ -199,6 +198,8 @@ class TestLargeCsvStreaming:
         assert ds.row_count == len(ds.rows) == 2
         assert ds.encoding
         assert ds.sep == ","
+
+
 class TestPdfReading:
     """PDF 读取：文本提取、缺包报错、打开失败包装。"""
 
@@ -335,8 +336,7 @@ class TestToNative:
         assert data_reader._to_native(np.nan) is None
         # Timestamp / datetime64 -> ISO 字符串
         assert (
-            data_reader._to_native(pd.Timestamp("2026-01-01"))
-            == "2026-01-01T00:00:00"
+            data_reader._to_native(pd.Timestamp("2026-01-01")) == "2026-01-01T00:00:00"
         )
         assert data_reader._to_native(np.datetime64("2026-01-01")) == "2026-01-01"
         # numpy 标量 -> 原生类型
@@ -362,7 +362,9 @@ class TestEmptyAndNanColumns:
         import pandas as pd
 
         p = tmp_path / "empty.csv"
-        p.write_text("非空内容\n", encoding="utf-8")  # 绕过 strip 检查，触发 pandas 分支
+        p.write_text(
+            "非空内容\n", encoding="utf-8"
+        )  # 绕过 strip 检查，触发 pandas 分支
 
         def _raise_empty(*args, **kwargs):
             raise pd.errors.EmptyDataError("No columns to parse from file")
@@ -395,4 +397,3 @@ class TestEmptyAndNanColumns:
         assert ds.columns == ["未命名列", "数值"]
         assert ds.rows[0]["未命名列"] == 1
         assert ds.rows[0]["数值"] == 2
-

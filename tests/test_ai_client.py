@@ -184,6 +184,7 @@ class TestReviewReport:
         assert issues[0]["field"] == "实验结论"
         assert issues[0]["severity"] == "error"
 
+
 class TestPrivacySwitch:
     """隐私开关：ai.enabled=False 时，即使已配置完整也绝不上传数据。"""
 
@@ -221,6 +222,7 @@ class TestPrivacySwitch:
         self._forbid_network(monkeypatch)
         with pytest.raises(ExternalDependencyError, match="关闭"):
             ai_client._chat_json(cfg, [{"role": "user", "content": "x"}])
+
 
 class TestCacheIntegration:
     """AI 成本缓存：命中 / 未命中 / 关闭 / 不串用户与字段。"""
@@ -290,9 +292,7 @@ class TestCacheIntegration:
 
     def test_cache_does_not_mix_users(self, tmp_path, monkeypatch):
         cfg_a = self._configured_cfg(tmp_path / "config.json", monkeypatch)
-        cfg_b = self._configured_cfg(
-            tmp_path / "b" / "config.json", monkeypatch
-        )
+        cfg_b = self._configured_cfg(tmp_path / "b" / "config.json", monkeypatch)
         cfg_b.set("user", {"id": "user-b"})
         calls = self._counting_urlopen(monkeypatch)
         ai_client.extract_fields(cfg_a, "素材", ["实验名称"])
@@ -313,15 +313,9 @@ class TestCacheIntegration:
     def test_temperature_affects_cache_key(self, tmp_path, monkeypatch):
         cfg = self._configured_cfg(tmp_path / "config.json", monkeypatch)
         calls = self._counting_urlopen(monkeypatch)
-        ai_client._chat_json(
-            cfg, [{"role": "user", "content": "x"}], temperature=0.1
-        )
-        ai_client._chat_json(
-            cfg, [{"role": "user", "content": "x"}], temperature=0.9
-        )
+        ai_client._chat_json(cfg, [{"role": "user", "content": "x"}], temperature=0.1)
+        ai_client._chat_json(cfg, [{"role": "user", "content": "x"}], temperature=0.9)
         assert calls["n"] == 2  # temperature 不同 => 键不同
-
-
 
 
 class TestTryExtractFields:
@@ -352,9 +346,9 @@ class TestTryExtractFields:
         )
         _install_fake_urlopen(
             monkeypatch,
-            json.dumps(
-                {"choices": [{"message": {"content": content}}]}
-            ).encode("utf-8"),
+            json.dumps({"choices": [{"message": {"content": content}}]}).encode(
+                "utf-8"
+            ),
         )
         fields, err = ai_client.try_extract_fields(cfg, "素材内容", ["实验名称"])
         assert err is None

@@ -70,6 +70,7 @@ class TestEnsureDirs:
 
 # ---- 覆盖率补充：损坏配置备份/回退、set/get、DPAPI 解密、非 Windows 路径 ----
 
+
 def test_load_corrupt_json_backs_up(tmp_path):
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text("{not valid json", encoding="utf-8")

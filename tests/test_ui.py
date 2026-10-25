@@ -25,6 +25,8 @@ def test_ui_smoke():
         env=env,
     )
     assert result.returncode == 0, f"UI 冒烟测试失败:\n{result.stdout}\n{result.stderr}"
+
+
 _PRIVACY_SWITCH_CODE = r"""
 import os
 import sys
@@ -78,8 +80,6 @@ def test_ui_settings_privacy_switch():
         f"设置页隐私开关测试失败:\n{result.stdout}\n{result.stderr}"
     )
     assert "SETTINGS_PRIVACY_SWITCH_OK" in result.stdout
-
-
 
 
 _AI_MAPPING_CODE = r"""

@@ -5,7 +5,6 @@
 
 import json
 import sys
-import types
 from pathlib import Path
 
 import pytest
@@ -212,10 +211,10 @@ class TestCorruption:
         )
         cache = AICache(p)
         assert cache.get("good") == {"ok": 1}  # 合法条目可用
-        assert cache.get("bad") is None       # 脏条目被清洗，按未命中计
+        assert cache.get("bad") is None  # 脏条目被清洗，按未命中计
         assert cache.get("no-result") is None
-        assert cache.stats()["hits"] == 6      # 载入 5 + 本次命中 1
-        assert cache.stats()["misses"] == 4    # 载入 2 + 本次 miss 2
+        assert cache.stats()["hits"] == 6  # 载入 5 + 本次命中 1
+        assert cache.stats()["misses"] == 4  # 载入 2 + 本次 miss 2
 
 
 # --------------------------------------------------------------------------- #
@@ -301,9 +300,9 @@ class TestContainsAndKeyValidation:
 class TestClearKeepStats:
     def test_clear_keep_stats_false_resets_counts(self, tmp_path):
         cache = AICache(tmp_path / "cache.json")
-        cache.get("m")          # miss
+        cache.get("m")  # miss
         cache.set("k", 1)
-        cache.get("k")          # hit
+        cache.get("k")  # hit
         assert cache.stats()["hits"] == 1
         assert cache.stats()["misses"] == 1
         assert cache.stats()["size"] == 1

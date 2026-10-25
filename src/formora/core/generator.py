@@ -28,9 +28,7 @@ from .template_parser import parse_template
 _TEMPLATE_CACHE_MAX = 32
 # 缓存 key = (规范化模板路径, mtime_ns, size)；value 为 _TemplateCacheEntry。
 # 批量生成在 QThread 中运行，多个任务可能并发，因此用 RLock 保护字典。
-_template_cache: "OrderedDict[tuple[str, int, int], _TemplateCacheEntry]" = (
-    OrderedDict()
-)
+_template_cache: OrderedDict[tuple[str, int, int], _TemplateCacheEntry] = OrderedDict()
 _template_cache_lock = threading.RLock()
 # 共享 jinja2 Environment：docxtpl 每次 render 都会用同一段模板 XML 调用
 # from_string()，默认会重新解析并编译模板。jinja2 的 from_string 不走自带缓存，
@@ -55,7 +53,9 @@ class _CachingJinjaEnvironment(Environment):
             if tpl is not None:
                 self._formora_template_cache.move_to_end(source)
                 return tpl
-        tpl = super().from_string(source, globals=globals, template_class=template_class)
+        tpl = super().from_string(
+            source, globals=globals, template_class=template_class
+        )
         if globals is None and template_class is None:
             self._formora_template_cache[source] = tpl
             while len(self._formora_template_cache) > _JINJA_CACHE_MAX:
@@ -63,7 +63,7 @@ class _CachingJinjaEnvironment(Environment):
         return tpl
 
 
-def _get_jinja_env() -> "_CachingJinjaEnvironment":
+def _get_jinja_env() -> _CachingJinjaEnvironment:
     """返回进程级共享的 jinja2 Environment（惰性创建，线程安全）。"""
     global _JINJA_ENV
     if _JINJA_ENV is None:
@@ -78,7 +78,7 @@ class _TemplateCacheEntry:
     缓存的骨架本身从不被修改，因此多线程共享 entry 是安全的。
     """
 
-    __slots__ = ("_raw", "_doc")
+    __slots__ = ("_doc", "_raw")
 
     def __init__(self, raw: bytes, doc) -> None:
         self._raw = raw
@@ -172,7 +172,7 @@ def generate_report(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        from docxtpl import DocxTemplate
+        from docxtpl import DocxTemplate  # noqa: F401 - 仅用于探测依赖是否可用
     except ImportError:
         raise ExternalDependencyError("docxtpl 未安装，无法生成报告。")
 

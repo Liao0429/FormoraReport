@@ -6,8 +6,20 @@ from unittest.mock import Mock
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
-from formora.core.errors import BugError, DocumentFormatError, ExternalDependencyError, FormoraError, UserError
-from formora.ui.errors import inline_message, is_expected, log_exception, show_error, show_warning, user_message
+from formora.core.errors import (
+    BugError,
+    DocumentFormatError,
+    ExternalDependencyError,
+    UserError,
+)
+from formora.ui.errors import (
+    inline_message,
+    is_expected,
+    log_exception,
+    show_error,
+    show_warning,
+    user_message,
+)
 
 
 def test_is_expected_for_expected():

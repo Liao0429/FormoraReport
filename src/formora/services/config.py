@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import base64
 import copy
-import logging
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -148,7 +148,9 @@ class Config:
             try:
                 bak = self.path.with_suffix(".json.bak")
                 self.path.replace(bak)
-                logger.warning("配置文件格式异常（非对象），已备份为 %s 并使用默认配置", bak)
+                logger.warning(
+                    "配置文件格式异常（非对象），已备份为 %s 并使用默认配置", bak
+                )
             except OSError:
                 logger.warning("配置文件格式异常（非对象），已使用默认配置")
             return copy.deepcopy(DEFAULTS)

@@ -270,7 +270,7 @@ def _parse_model_json(content) -> dict | list:
         if start >= 0:
             end_pos = text.rfind(close_ch)
             if end_pos > start:
-                text = text[start:end_pos + 1]
+                text = text[start : end_pos + 1]
                 break
     return json.loads(text)
 
@@ -331,6 +331,7 @@ def _chat_json(
         },
     )
     return _get_cache().get_or_set(key, _produce)
+
 
 SYSTEM_PROMPT = (
     "你是一名严谨的实验报告辅助助手。你根据用户提供的实验模板字段与原始素材，"

@@ -386,12 +386,15 @@ class TestAuth:
         assert r.status_code == 200
         assert r.json()["auth_enabled"] is False
 
+
 class TestRateLimit:
     def test_exceed_limit_returns_429(self, client: TestClient, monkeypatch):
         """超过每 IP 限制后，后续请求返回 429 JSON。"""
         import formora.api as api_mod
 
-        monkeypatch.setattr(api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=3))
+        monkeypatch.setattr(
+            api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=3)
+        )
         url = "/api/mapping/auto?template_file_id=not_exist"
         # 前 3 次未超限：端点正常处理（模板不存在返回 404）
         for _ in range(3):
@@ -405,7 +408,9 @@ class TestRateLimit:
         """限流器已满时，/api/health 仍可访问。"""
         import formora.api as api_mod
 
-        monkeypatch.setattr(api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=1))
+        monkeypatch.setattr(
+            api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=1)
+        )
         url = "/api/mapping/auto?template_file_id=not_exist"
         assert client.post(url).status_code == 404  # 消耗唯一额度
         assert client.post(url).status_code == 429  # 限流生效
@@ -485,9 +490,7 @@ class TestGenerateBatch:
                 "/api/report/generate_batch",
                 data={
                     "template_file_id": template_fid,
-                    "mappings": json.dumps(
-                        self._batch_mappings(), ensure_ascii=False
-                    ),
+                    "mappings": json.dumps(self._batch_mappings(), ensure_ascii=False),
                     "auto_chart": "false",
                 },
                 files={"file": ("数据.csv", f, "text/csv")},
@@ -567,8 +570,9 @@ class TestGenerateBatch:
 
     def test_generate_batch_auth_required(self, monkeypatch, isolated_history):
         """配置 FORMORA_API_KEY 后，无 token 返回 401；带 token 通过鉴权。"""
-        import formora.api as api_mod
         from fastapi.testclient import TestClient as TC
+
+        import formora.api as api_mod
 
         monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
         c = TC(app)
@@ -680,8 +684,9 @@ class TestGenerateBatchAsync:
 
     def test_auth_required(self, monkeypatch):
         """配置 FORMORA_API_KEY 后，无 token 提交异步任务返回 401。"""
-        import formora.api as api_mod
         from fastapi.testclient import TestClient as TC
+
+        import formora.api as api_mod
 
         monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
         c = TC(app)
@@ -750,9 +755,7 @@ class TestPruneExpired:
         fresh_file = tmp_path / "fresh.docx"
         fresh_file.write_bytes(b"fresh file")
         fresh_fid = "file_fresh"
-        api_mod._FILES[fresh_fid] = api_mod._FileRecord(
-            path=fresh_file, created_at=now
-        )
+        api_mod._FILES[fresh_fid] = api_mod._FileRecord(path=fresh_file, created_at=now)
 
         api_mod._prune_expired()
 
@@ -808,8 +811,9 @@ class TestRateLimiterUnit:
 class TestAuthWrongToken:
     def test_auth_wrong_token_401(self, monkeypatch):
         """配置 FORMORA_API_KEY 后，错误 Bearer token 返回 401。"""
-        import formora.api as api_mod
         from fastapi.testclient import TestClient as TC
+
+        import formora.api as api_mod
 
         monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
         c = TC(app)

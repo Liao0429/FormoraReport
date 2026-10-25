@@ -72,9 +72,7 @@ def _load_chart_config() -> dict:
         except Exception:
             cfg = {}
     try:
-        if hasattr(cfg, "get"):
-            chart_cfg = cfg.get("chart") or {}
-        elif isinstance(cfg, dict):
+        if hasattr(cfg, "get") or isinstance(cfg, dict):
             chart_cfg = cfg.get("chart") or {}
         else:
             chart_cfg = {}
@@ -88,9 +86,7 @@ def _chart_cfg_from(config) -> dict:
     if config is None:
         return _load_chart_config()
     try:
-        if hasattr(config, "get"):
-            chart_cfg = config.get("chart") or {}
-        elif isinstance(config, dict):
+        if hasattr(config, "get") or isinstance(config, dict):
             chart_cfg = config.get("chart") or {}
         else:
             chart_cfg = {}
@@ -135,14 +131,16 @@ def _require_mpl() -> None:
         raise ExternalDependencyError("matplotlib 不可用，无法生成图表。")
 
 
-
 def _normalize_x_values(x_values) -> list:
     """x 轴值归一化：若全部为数值（int/float 且非 bool）则保留数值类型，
     使 matplotlib 使用数值/时间轴，避免不等间隔的时间点被等距扭曲；
     否则转字符串作为类别轴。"""
     import numbers
+
     vals = list(x_values)
-    if vals and all(isinstance(v, numbers.Real) and not isinstance(v, bool) for v in vals):
+    if vals and all(
+        isinstance(v, numbers.Real) and not isinstance(v, bool) for v in vals
+    ):
         return vals
     return [str(v) for v in vals]
 

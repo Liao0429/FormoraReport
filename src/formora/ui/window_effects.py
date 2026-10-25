@@ -69,10 +69,8 @@ def apply_immersive_dark_mode(hwnd: int, dark: bool) -> bool:
 
 def is_mica_supported() -> bool:
     """粗略检测：Windows 11 22H2+ 支持 Mica。失败返回 False，调用方走 QSS 降级。"""
-    if not _IS_WINDOWS or _dwmapi is None:
-        return False
     # 用当前进程窗口试探一次（某些环境 winId 尚未创建，这里仅检测 DLL 可用性）
-    return True
+    return _IS_WINDOWS and _dwmapi is not None
 
 
 def setup_glass_window(window, dark: bool = False) -> bool:
