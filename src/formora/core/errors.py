@@ -26,6 +26,14 @@ class ExternalDependencyError(FormoraError):
     """外部依赖错误：LibreOffice缺失、OCR模型未安装、网络/AI 服务不可用等。"""
 
 
+class BatchExportCancelledError(FormoraError):
+    """批量导出被用户协作式取消。
+
+    UI 层通过 should_cancel 回调请求取消，服务层在下一份文件前检查并抛出，
+    保证取消是「干净」的：不中断当前文件、不残留半成品状态。
+    """
+
+
 class BugError(FormoraError):
     """程序缺陷：未知异常（服务边界捕获非预期异常时包装为它）。
 

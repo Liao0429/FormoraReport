@@ -254,3 +254,45 @@ class TestBatchExportPdf:
         assert ok == 1
         assert len(failed) == 1
         assert "bad" in failed[0]
+
+    def test_progress_cb_reports_each_file(self, tmp_path, monkeypatch):
+        from formora.core import pdf_exporter
+
+        monkeypatch.setattr(
+            pdf_exporter,
+            "export_pdf",
+            lambda docx, out: Path(out).write_bytes(b"pdf") or Path(out),
+        )
+        files = []
+        for name in ("a", "b", "c"):
+            p = tmp_path / f"{name}.docx"
+            p.write_bytes(b"x")
+            files.append(str(p))
+        seen = []
+        ok, failed = batch_export_pdf(
+            files, progress_cb=lambda done, total: seen.append((done, total))
+        )
+        assert ok == 3
+        assert failed == []
+        assert seen == [(1, 3), (2, 3), (3, 3)]
+
+    def test_should_cancel_stops_batch(self, tmp_path, monkeypatch):
+        from formora.core import pdf_exporter
+        from formora.core.errors import BatchExportCancelledError
+
+        calls = []
+
+        def fake_export(docx, out):
+            calls.append(str(docx))
+            Path(out).write_bytes(b"pdf")
+            return Path(out)
+
+        monkeypatch.setattr(pdf_exporter, "export_pdf", fake_export)
+        files = []
+        for name in ("a", "b", "c"):
+            p = tmp_path / f"{name}.docx"
+            p.write_bytes(b"x")
+            files.append(str(p))
+        with pytest.raises(BatchExportCancelledError):
+            batch_export_pdf(files, should_cancel=lambda: len(calls) >= 1)
+        assert len(calls) == 1  # 只转换了第一份就协作式取消

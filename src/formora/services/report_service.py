@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from formora.core import chart, generator, mapper
 from formora.core.errors import FormoraError
@@ -383,23 +383,41 @@ def generate_batch(
     return results, errors
 
 
-def batch_export_pdf(docx_paths: list[str]) -> tuple[int, list[str]]:
+def batch_export_pdf(
+    docx_paths: list[str],
+    progress_cb: Callable[[int, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> tuple[int, list[str]]:
     """把多个 DOCX 串行转为 PDF（复用 LibreOffice 互斥锁，单份失败不中断）。
 
     供桌面端「批量导出 PDF」按钮与后端 API 复用。
     返回：(成功数, 失败信息列表["文件名: 错误"])
+
+    可选参数（向后兼容，旧调用方不传即可）：
+    - progress_cb(done, total)：每完成一份调用一次，供 UI 展示进度。
+    - should_cancel()：每开始下一份前调用；返回 True 时抛出
+      BatchExportCancelledError，实现协作式取消（不中断当前文件转换，
+      不残留半成品状态）。
     """
     import os
 
     from formora.core import pdf_exporter
+    from formora.core.errors import BatchExportCancelledError
 
+    total = len(docx_paths)
     ok = 0
     failed: list[str] = []
-    for docx in docx_paths:
+    for i, docx in enumerate(docx_paths, 1):
+        if should_cancel is not None and should_cancel():
+            raise BatchExportCancelledError(
+                f"批量导出已取消（已完成 {ok}/{total} 份）。"
+            )
         try:
             out = os.path.splitext(docx)[0] + ".pdf"
             pdf_exporter.export_pdf(docx, out)
             ok += 1
         except FormoraError as e:
             failed.append(f"{os.path.basename(docx)}: {e}")
+        if progress_cb is not None:
+            progress_cb(i, total)
     return ok, failed

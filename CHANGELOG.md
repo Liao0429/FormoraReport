@@ -20,6 +20,24 @@
 
 - **295 项自动化测试通过**（新增 6 项）。
 
+## [2.14.0] - 2026-10-25
+
+### Added
+
+- **批量 PDF 导出进度条 + 协作式取消**：
+  - `batch_export_pdf` 新增可选回调 `progress_cb(done, total)` 与 `should_cancel()`，旧调用方式完全兼容
+  - 新增 `BatchExportCancelledError` 异常：取消时在下一份文件前干净退出，不中断当前文件、不残留半成品
+  - 生成页「批量导出 PDF」改为后台 QThread 执行，新增进度条与「取消」按钮，UI 不再卡死
+- **`tests/test_report_service_extra.py`**：新增进度回调与协作式取消测试
+
+### Changed
+
+- **generate_page**：批量导出不再同步阻塞 UI，可实时查看进度并随时取消
+
+### 兼容性
+
+- **297 项自动化测试通过**（新增 2 项）。
+
 ## [Unreleased]
 
 ## [2.12.0] - 2026-10-25
