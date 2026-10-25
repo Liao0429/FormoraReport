@@ -75,6 +75,10 @@ class DataSource:
     rows: list[dict[str, Any]] = field(default_factory=list)  # 表格型数据行
     text: str = ""  # 文本型数据（TXT/MD/PDF）
     summary: str = ""
+    row_count: int = 0  # 文件数据总行数（大文件预览时仍为全量精确值）
+    truncated: bool = False  # True 表示文件过大，仅载入前 N 行预览
+    encoding: str = ""  # 实际使用的文本编码（如 utf-8-sig / gbk）
+    sep: str = ""  # 检测到的 CSV 分隔符
 
     @property
     def is_tabular(self) -> bool:

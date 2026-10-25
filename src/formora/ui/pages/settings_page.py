@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from formora.ai import client
+from formora.core.chart import BLUE_ORANGE_COLORS
 from formora.core.errors import FormoraError
 from formora.ui.widgets import Card, hint_label, primary_button, secondary_button
 
@@ -79,6 +80,22 @@ class SettingsPage(QWidget):
         form.addRow("输出目录", outdir_row)
         general.add_layout(form)
         lay.addWidget(general)
+
+        # 图表样式
+        chart_card = Card("图表样式")
+        chart_form = QFormLayout()
+        self.chart_colors_combo = QComboBox()
+        self.chart_colors_combo.addItems(["默认", "蓝橙"])
+        chart_form.addRow("颜色主题", self.chart_colors_combo)
+
+        self.chart_dpi_combo = QComboBox()
+        self.chart_dpi_combo.addItems(["100", "150", "200"])
+        chart_form.addRow("DPI", self.chart_dpi_combo)
+
+        self.chart_grid_check = QCheckBox("显示网格")
+        chart_form.addRow("", self.chart_grid_check)
+        chart_card.add_layout(chart_form)
+        lay.addWidget(chart_card)
 
         # AI 设置
         ai_card = Card("AI 智能模式（可选）")
@@ -148,6 +165,22 @@ class SettingsPage(QWidget):
             temp = 0.2
         self.ai_temp.setValue(int(round(float(temp) * 100)))
 
+        chart_cfg = cfg.get("chart", {}) or {}
+        if not isinstance(chart_cfg, dict):
+            chart_cfg = {}
+        colors = chart_cfg.get("colors") or []
+        self.chart_colors_combo.setCurrentIndex(
+            0 if colors != BLUE_ORANGE_COLORS else 1
+        )
+        dpi = chart_cfg.get("dpi", 150)
+        try:
+            dpi = int(dpi) if dpi else 150
+        except (TypeError, ValueError):
+            dpi = 150
+        self.chart_dpi_combo.setCurrentIndex({100: 0, 150: 1, 200: 2}.get(dpi, 1))
+        grid = chart_cfg.get("grid", True)
+        self.chart_grid_check.setChecked(True if grid is None else bool(grid))
+
     def _on_ai_enabled_toggled(self, checked: bool):
         """隐私开关：关闭 AI 辅助后禁用 AI 配置输入，确保不会上传任何数据。"""
         for w in (
@@ -169,6 +202,17 @@ class SettingsPage(QWidget):
         ai["model"] = self.ai_model.text().strip()
         ai["temperature"] = self.ai_temp.value() / 100.0
         cfg.set("ai", ai)
+
+        chart_cfg = dict(cfg.get("chart", {}) or {})
+        if not isinstance(chart_cfg, dict):
+            chart_cfg = {}
+        chart_cfg["colors"] = (
+            [] if self.chart_colors_combo.currentIndex() == 0 else list(BLUE_ORANGE_COLORS)
+        )
+        chart_cfg["dpi"] = int(self.chart_dpi_combo.currentText())
+        chart_cfg["grid"] = self.chart_grid_check.isChecked()
+        cfg.set("chart", chart_cfg)
+
         # 密钥：仅当输入了新内容才更新
         if self.ai_key.text().strip():
             cfg.set_ai_api_key(self.ai_key.text().strip())

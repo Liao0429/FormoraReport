@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.request
 
+from formora.ai.cache import AICache, make_cache_key
 from formora.core.errors import ExternalDependencyError
 from formora.services.config import Config
 
@@ -176,6 +178,43 @@ def is_configured(config: Config) -> bool:
     )
 
 
+_CACHE = AICache()
+
+
+def _cache_enabled(config: Config) -> bool:
+    """AI 结果缓存开关：默认开启。
+
+    可通过配置 ``ai.cache_enabled``（False 关闭）或环境变量
+    ``FORMORA_AI_CACHE_ENABLED``（"0"/"false"/"off"/"no" 关闭）禁用。
+    环境变量优先于配置文件。
+    """
+    env = os.environ.get("FORMORA_AI_CACHE_ENABLED")
+    if env is not None:
+        return env.strip().lower() not in ("0", "false", "off", "no", "")
+    ai = config.get("ai", {}) or {}
+    value = ai.get("cache_enabled")
+    if value is None:
+        return True
+    return bool(value)
+
+
+def _cache_user_namespace(config: Config) -> str:
+    """返回用户/租户命名空间，防止多用户共享机器上缓存串用户。
+
+    优先使用配置中的 user.id / user.name；未配置时回退到操作系统用户名。
+    """
+    user_cfg = config.get("user", {}) or {}
+    uid = user_cfg.get("id") or user_cfg.get("name")
+    if uid:
+        return str(uid)
+    return os.environ.get("USERNAME") or os.environ.get("USER") or "default-user"
+
+
+def _get_cache() -> AICache:
+    """返回全局缓存实例（便于测试替换）。"""
+    return _CACHE
+
+
 def _post_chat(
     base_url: str,
     model: str,
@@ -236,7 +275,20 @@ def _parse_model_json(content) -> dict | list:
     return json.loads(text)
 
 
-def _chat_json(config: Config, messages: list[dict], temperature: float = 0.2) -> dict:
+def _chat_json(
+    config: Config,
+    messages: list[dict],
+    temperature: float = 0.2,
+    *,
+    cache_scope: str = "chat",
+) -> dict:
+    """发送 JSON 模式请求并返回解析结果；带 AI 成本缓存。
+
+    缓存默认开启：以 (model, temperature, json_mode, messages) 加业务上下文
+    （用户命名空间、调用场景、base_url）为键，命中直接返回，未命中才发起
+    真实 API 请求并写入缓存。可通过配置 ai.cache_enabled=False 或环境变量
+    FORMORA_AI_CACHE_ENABLED=0 关闭。
+    """
     ai = config.get("ai", {})
     if not ai.get("enabled"):
         raise ExternalDependencyError(
@@ -248,20 +300,37 @@ def _chat_json(config: Config, messages: list[dict], temperature: float = 0.2) -
     if not base_url or not model or not api_key:
         raise ExternalDependencyError("AI 配置不完整，请检查 API 地址、模型与密钥。")
 
-    body = _post_chat(base_url, model, api_key, messages, temperature=temperature)
-    try:
-        content = body["choices"][0]["message"].get("content")
-        # 部分 reasoning 模型把正文放在 reasoning_content
-        if content is None:
-            content = body["choices"][0]["message"].get("reasoning_content")
-        result = _parse_model_json(content)
-    except Exception as e:
-        raise ExternalDependencyError(f"AI 返回无法解析为 JSON: {e}")
-    if isinstance(result, list):
-        return {"fields": result}
-    if not isinstance(result, dict):
-        raise ExternalDependencyError("AI 返回格式异常：既不是对象也不是数组。")
-    return result
+    def _produce() -> dict:
+        body = _post_chat(base_url, model, api_key, messages, temperature=temperature)
+        try:
+            content = body["choices"][0]["message"].get("content")
+            # 部分 reasoning 模型把正文放在 reasoning_content
+            if content is None:
+                content = body["choices"][0]["message"].get("reasoning_content")
+            result = _parse_model_json(content)
+        except Exception as e:
+            raise ExternalDependencyError(f"AI 返回无法解析为 JSON: {e}")
+        if isinstance(result, list):
+            return {"fields": result}
+        if not isinstance(result, dict):
+            raise ExternalDependencyError("AI 返回格式异常：既不是对象也不是数组。")
+        return result
+
+    if not _cache_enabled(config):
+        return _produce()
+
+    key = make_cache_key(
+        model,
+        messages,
+        temperature=temperature,
+        json_mode=True,
+        extra={
+            "scope": cache_scope,
+            "user": _cache_user_namespace(config),
+            "base_url": base_url,
+        },
+    )
+    return _get_cache().get_or_set(key, _produce)
 
 SYSTEM_PROMPT = (
     "你是一名严谨的实验报告辅助助手。你根据用户提供的实验模板字段与原始素材，"
@@ -295,10 +364,30 @@ def extract_fields(
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_msg},
         ],
+        cache_scope="extract_fields",
     )
     if not isinstance(result, dict):
         raise ExternalDependencyError("AI 返回结构异常：期望 JSON 对象但得到其他类型。")
     return result.get("fields", [])
+
+
+def try_extract_fields(
+    config: Config,
+    materials_text: str,
+    template_fields: list[str],
+) -> tuple[list[dict] | None, str | None]:
+    """尝试 AI 抽取字段；失败时不抛异常，便于调用方自动回退。
+
+    返回：
+    - 成功：(fields, None)
+    - 失败（未配置/网络错误/AI 返回异常）：(None, 用户可读错误信息)
+
+    UI 在后台线程调用它：AI 不可用时自动回退到规则映射，不阻塞用户。
+    """
+    try:
+        return extract_fields(config, materials_text, template_fields), None
+    except ExternalDependencyError as e:
+        return None, getattr(e, "user_message", None) or str(e)
 
 
 def review_report(config: Config, report_text: str) -> list[dict]:
@@ -325,6 +414,7 @@ def review_report(config: Config, report_text: str) -> list[dict]:
             },
             {"role": "user", "content": user_msg},
         ],
+        cache_scope="review_report",
     )
     if not isinstance(result, dict):
         raise ExternalDependencyError("AI 返回结构异常：期望 JSON 对象但得到其他类型。")

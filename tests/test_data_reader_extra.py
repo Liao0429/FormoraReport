@@ -129,3 +129,73 @@ class TestImportCompatibility:
         with pytest.raises(DocumentFormatError) as ei:
             data_reader.read_data(p)
         assert "空" in str(ei.value) or "没有可读取" in str(ei.value)
+
+class TestLargeCsvStreaming:
+    """超大 CSV 流式读取：>20MB 预览模式、流式行数、单行读取。"""
+
+    def _make_large_csv(self, tmp_path, target_bytes=21 * 1024 * 1024):
+        """生成超过 20MB 的临时 CSV（重复行拼出），返回 (路径, 总行数)。"""
+        p = tmp_path / "large.csv"
+        header = "样本,数值,类别,备注\n"
+        row = "样本X,12.5,类别A," + "长文本" * 40 + "\n"
+        p.write_bytes(header.encode("utf-8"))
+        total = 0
+        with p.open("ab") as f:
+            while f.tell() < target_bytes:
+                f.write(row.encode("utf-8"))
+                total += 1
+        return p, total
+
+    def test_large_csv_truncated_preview(self, tmp_path):
+        p, total_rows = self._make_large_csv(tmp_path)
+        ds = data_reader.read_data(p)
+        assert ds.truncated is True
+        assert ds.row_count == total_rows
+        assert len(ds.rows) == 200  # 只载入前 200 行预览
+        assert ds.columns == ["样本", "数值", "类别", "备注"]
+        assert ds.encoding
+        assert ds.sep == ","
+        assert "预览" in ds.summary
+        assert ds.rows[0]["样本"] == "样本X"
+        assert ds.rows[0]["数值"] == "12.5"
+
+    def test_iter_csv_rows_streams_all_rows(self, tmp_path):
+        p, total_rows = self._make_large_csv(tmp_path)
+        ds = data_reader.read_data(p)
+        rows = list(
+            data_reader.iter_csv_rows(p, encoding=ds.encoding, sep=ds.sep)
+        )
+        assert len(rows) == total_rows
+        assert rows[0] == ds.rows[0]
+        assert rows[-1]["样本"] == "样本X"
+
+    def test_load_row(self, tmp_path):
+        p, total_rows = self._make_large_csv(tmp_path)
+        ds = data_reader.read_data(p)
+        row0 = data_reader.load_row(
+            p, encoding=ds.encoding, sep=ds.sep, row_index=0
+        )
+        assert row0 == ds.rows[0]
+        mid = data_reader.load_row(
+            p, encoding=ds.encoding, sep=ds.sep, row_index=total_rows // 2
+        )
+        assert mid["样本"] == "样本X"
+        assert mid["数值"] == "12.5"
+
+    def test_load_row_out_of_range(self, tmp_path):
+        p, total_rows = self._make_large_csv(tmp_path)
+        ds = data_reader.read_data(p)
+        with pytest.raises(IndexError):
+            data_reader.load_row(
+                p, encoding=ds.encoding, sep=ds.sep, row_index=total_rows + 10
+            )
+
+    def test_small_csv_not_truncated(self, tmp_path):
+        """小文件保持原全量读取行为，新增字段有默认值且不回退。"""
+        p = tmp_path / "small.csv"
+        p.write_text("项目,数值\nA,1\nB,2\n", encoding="utf-8")
+        ds = data_reader.read_data(p)
+        assert ds.truncated is False
+        assert ds.row_count == len(ds.rows) == 2
+        assert ds.encoding
+        assert ds.sep == ","

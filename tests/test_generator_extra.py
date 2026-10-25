@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -111,3 +112,142 @@ class TestRenderImage:
         obj = generator._render_image(t, "chart", str(png))
         # InlineImage 对象应有 _width 等属性（docxtpl 内部实现）
         assert obj is not None
+
+
+class TestTemplateParseCache:
+    """模板解析缓存：命中复用、修改后失效、并发安全。"""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        generator.clear_template_cache()
+        yield
+        generator.clear_template_cache()
+
+    @staticmethod
+    def _make_template(tmp_path: Path, placeholder: str = "实验名称") -> Path:
+        from docx import Document
+
+        tpl = tmp_path / "tpl.docx"
+        doc = Document()
+        doc.add_paragraph(f"{{{{{placeholder}}}}}")
+        doc.save(str(tpl))
+        return tpl
+
+    def test_cache_hit_reuses_parsed_skeleton(self, tmp_path, monkeypatch):
+        """同一模板连续生成多份时，docx 只解析一次（缓存命中）。"""
+        import docx
+
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+        real_document = docx.Document
+        parses: list[int] = []
+
+        def counting_document(*args, **kwargs):
+            parses.append(1)
+            return real_document(*args, **kwargs)
+
+        monkeypatch.setattr(docx, "Document", counting_document)
+
+        generator.generate_report(
+            tpl, {"实验名称": "A"}, tmp_path / "out1.docx", template_info=info
+        )
+        generator.generate_report(
+            tpl, {"实验名称": "B"}, tmp_path / "out2.docx", template_info=info
+        )
+        assert len(parses) == 1, "第二次生成应命中缓存，不再解析模板"
+        assert (tmp_path / "out1.docx").exists()
+        assert (tmp_path / "out2.docx").exists()
+
+    def test_cache_invalidates_after_template_modified(self, tmp_path, monkeypatch):
+        """模板文件修改后（mtime/size 变化）应重新解析。"""
+        import docx
+
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+        real_document = docx.Document
+        parses: list[int] = []
+
+        def counting_document(*args, **kwargs):
+            parses.append(1)
+            return real_document(*args, **kwargs)
+
+        monkeypatch.setattr(docx, "Document", counting_document)
+
+        generator.generate_report(
+            tpl, {"实验名称": "A"}, tmp_path / "out1.docx", template_info=info
+        )
+        assert len(parses) == 1
+
+        # 改写模板内容后再次生成，应触发重新解析
+        new_doc = real_document()
+        new_doc.add_paragraph("{{实验名称}}（新版本）")
+        new_doc.save(str(tpl))
+
+        generator.generate_report(
+            tpl, {"实验名称": "B"}, tmp_path / "out2.docx", template_info=info
+        )
+        assert len(parses) == 2, "模板修改后缓存应失效并重新解析"
+        assert (tmp_path / "out2.docx").exists()
+
+    def test_clear_template_cache(self, tmp_path, monkeypatch):
+        """clear_template_cache 后首次生成应重新解析。"""
+        import docx
+
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+        real_document = docx.Document
+        parses: list[int] = []
+
+        def counting_document(*args, **kwargs):
+            parses.append(1)
+            return real_document(*args, **kwargs)
+
+        monkeypatch.setattr(docx, "Document", counting_document)
+
+        generator.generate_report(
+            tpl, {"实验名称": "A"}, tmp_path / "out1.docx", template_info=info
+        )
+        generator.generate_report(
+            tpl, {"实验名称": "B"}, tmp_path / "out2.docx", template_info=info
+        )
+        assert len(parses) == 1
+
+        generator.clear_template_cache()
+        generator.generate_report(
+            tpl, {"实验名称": "C"}, tmp_path / "out3.docx", template_info=info
+        )
+        assert len(parses) == 2, "清空缓存后应重新解析"
+
+    def test_concurrent_generation_thread_safe(self, tmp_path):
+        """多线程并发生成（模拟多个 QThread 批量任务）应安全且输出正确。"""
+        tpl = self._make_template(tmp_path)
+        info = TemplateInfo(path=tpl, placeholders=["实验名称"])
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        errors: list[Exception] = []
+
+        def worker(n: int) -> None:
+            try:
+                for i in range(5):
+                    generator.generate_report(
+                        tpl,
+                        {"实验名称": f"任务{n}-{i}"},
+                        out_dir / f"{n}_{i}.docx",
+                        template_info=info,
+                    )
+            except Exception as e:  # pragma: no cover - 失败时记录断言
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        from docx import Document
+
+        files = sorted(out_dir.glob("*.docx"))
+        assert len(files) == 20
+        texts = " ".join(p.text for p in Document(str(files[0])).paragraphs)
+        assert "任务0-0" in texts

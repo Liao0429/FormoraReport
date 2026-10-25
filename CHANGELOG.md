@@ -88,7 +88,31 @@
 
 - **350 项自动化测试通过**（+48）。
 
-## [Unreleased]
+## [2.17.0] - 2026-10-25
+
+### Added
+
+- **API 异步批量生成任务队列**：新增 `POST /api/report/generate_batch_async`（立即返回 202 + batch_id，后台线程执行）与 `GET /api/report/batch/{batch_id}`（轮询 pending/running/done/failed 状态、进度与结果），任务记录沿用 TTL 清理；同步端点保留
+- **超大 CSV 流式读取**：≥20MB 文件进入预览模式（只载入前 200 行，标注「文件过大，仅载入前 N 行预览」），`iter_csv_rows` 以 chunksize=10000 流式迭代全量行，`load_row` 惰性取单行；`DataSource` 新增 `row_count` / `truncated` / `encoding` / `sep` 字段（向后兼容）
+- **AI 成本缓存接入客户端**：`client.py` 的 JSON 请求外包 `cache.get_or_set`（键含 model/temperature/json_mode/messages + user/scope/base_url 防串），默认开启，`FORMORA_AI_CACHE_ENABLED=0` 或配置 `ai.cache_enabled=false` 可关闭
+- **AI 自动映射增强**：AI 建议写回时**不覆盖用户手动填写的映射**（`apply_ai_suggestions` + `_user_fields` 追踪）；AI 失败自动回退规则映射并不阻塞用户（`try_extract_fields` + `fallback_to_rule_mapping`）
+- **图表样式可配置化**：`config.chart`（colors/figsize/dpi/grid/font_size），设置页新增「图表样式」卡片（颜色主题 / DPI / 网格开关），默认值保持原行为
+- **测试覆盖率审查报告**：84% 行覆盖率，补齐清单已文档化（ui/errors、history、data_reader、api、config、generator、ai/client、ai/cache 等）
+
+### Changed
+
+- **打包体积优化落地**：移除 `collect_all`、Qt 翻译只保留中英文（198→6）、剔除 opengl32sw/libEGL/libGLESv2/d3compiler、excludes 26 项（fastapi/uvicorn/pydantic/tkinter 等）；单文件 EXE 从 **124.8 MiB 降至 85.8 MiB（-31.3%）**
+- **批量生成性能优化**：模板解析缓存（路径+mtime+size 为键，RLock 保护，LRU 32）+ jinja 编译缓存（LRU 256），100 份基准 **41.9ms → 34.4ms/份（约 -18%）**
+- **README / README.zh-CN 双语更新**：Docker 部署章节、新 API 端点、限流 `FORMORA_RATE_LIMIT`、隐私开关、示例模板列表、自动更新说明；版本引用统一 v2.16.0→v2.17.0
+
+### Fixed
+
+- **`models.py` 缩进损坏**（`summary` 字段多缩进 4 空格导致 IndentationError）
+- **API 文档与实现不一致**：`FORMORA_MAX_CACHED_FILES` 默认值修正为 1000
+
+### 兼容性
+
+- **395 项自动化测试通过**（新增 45 项）。
 
 ## [2.12.0] - 2026-10-25
 

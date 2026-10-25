@@ -83,3 +83,25 @@ class TestReportTask:
         task = ReportTask(name="a", template_path=Path("t.docx"))
         assert len(task.id) == 12
         assert ReportTask(name="b", template_path=Path("t.docx")).id != task.id
+
+class TestDataSourceLargeFields:
+    def test_large_csv_fields_defaults(self):
+        ds = DataSource(path=Path("a.csv"), kind="csv")
+        assert ds.row_count == 0
+        assert ds.truncated is False
+        assert ds.encoding == ""
+        assert ds.sep == ""
+
+    def test_large_csv_fields_explicit(self):
+        ds = DataSource(
+            path=Path("a.csv"),
+            kind="csv",
+            row_count=100,
+            truncated=True,
+            encoding="gbk",
+            sep=";",
+        )
+        assert ds.row_count == 100
+        assert ds.truncated is True
+        assert ds.encoding == "gbk"
+        assert ds.sep == ";"

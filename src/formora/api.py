@@ -22,7 +22,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,7 +39,13 @@ from formora.core.errors import (
     FormoraError,
     UserError,
 )
-from formora.core.models import FieldMapping, FieldSourceType, ReportTask
+from formora.core.models import (
+    DataSource,
+    FieldMapping,
+    FieldSourceType,
+    ReportTask,
+    TemplateInfo,
+)
 from formora.services.report_reader import extract_report_text
 
 logger = logging.getLogger("formora.api")
@@ -183,6 +189,24 @@ _TASKS: dict[str, _TaskRecord] = {}
 _WORK_DIR = Path(tempfile.mkdtemp(prefix="formora_api_"))
 
 
+@dataclass
+class _BatchRecord:
+    """异步批量生成任务记录（内存暂存，TTL 清理）。"""
+
+    batch_id: str
+    status: str  # pending | running | done | failed
+    total: int
+    completed: int
+    created_at: float
+    files: list[dict] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+_BATCHES: dict[str, _BatchRecord] = {}
+_BATCHES_LOCK = threading.Lock()
+
+
 def _now() -> float:
     return time.time()
 
@@ -208,6 +232,13 @@ def _prune_expired() -> None:
         tid for tid, rec in _TASKS.items() if now - rec.created_at > FILE_TTL_SECONDS
     ]:
         _drop(_TASKS, tid)
+    with _BATCHES_LOCK:
+        for bid in [
+            bid
+            for bid, rec in _BATCHES.items()
+            if now - rec.created_at > FILE_TTL_SECONDS
+        ]:
+            _BATCHES.pop(bid, None)
 
     if len(_FILES) > MAX_CACHED_FILES:
         for fid in sorted(_FILES, key=lambda f: _FILES[f].created_at)[
@@ -357,6 +388,180 @@ def _register_task(path: Path, kind: str) -> str:
     return task_id
 
 
+# ---------- 批量生成公共逻辑 ----------
+
+
+async def _parse_batch_request(request: Request) -> GenerateBatchRequest:
+    """解析批量生成请求体（JSON 或 multipart），返回 GenerateBatchRequest。"""
+    content_type = request.headers.get("content-type", "")
+    is_form = content_type.startswith("multipart/form-data") or content_type.startswith(
+        "application/x-www-form-urlencoded"
+    )
+    req: GenerateBatchRequest
+    if is_form:
+        form = await request.form()
+        template_file_id = str(form.get("template_file_id") or "").strip()
+        mappings_raw = form.get("mappings") or "[]"
+        try:
+            mappings_data = json.loads(mappings_raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组字符串")
+        if not isinstance(mappings_data, list):
+            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组")
+        auto_chart_raw = form.get("auto_chart")
+        auto_chart = None
+        if auto_chart_raw is not None:
+            auto_chart = str(auto_chart_raw).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            req = GenerateBatchRequest(
+                template_file_id=template_file_id,
+                mappings=[MappingItem(**m) for m in mappings_data],
+                data_file_id=str(form.get("data_file_id") or "").strip() or None,
+                auto_chart=auto_chart,
+            )
+        except (ValidationError, TypeError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"mappings 格式错误: {e}")
+        uploaded = form.get("file")
+        if uploaded is not None and getattr(uploaded, "filename", None):
+            if req.data_file_id:
+                raise HTTPException(
+                    status_code=400, detail="不能同时提供 data_file_id 与文件上传"
+                )
+            req.data_file_id = _save_upload(uploaded, "data")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="请求体必须是合法 JSON")
+        try:
+            req = GenerateBatchRequest.model_validate(body)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"请求参数错误: {e}")
+    return req
+
+
+def _prepare_batch(
+    req: GenerateBatchRequest,
+) -> tuple[Path, TemplateInfo, DataSource, list[FieldMapping]]:
+    """校验批量生成参数并加载模板/数据/映射。
+
+    返回 (tpl_path, template_info, data_source, mappings)；校验失败抛 HTTPException。
+    """
+    if not req.template_file_id:
+        raise HTTPException(status_code=400, detail="缺少 template_file_id")
+    if not req.mappings:
+        raise HTTPException(status_code=400, detail="映射列表 mappings 不能为空")
+    if not req.data_file_id:
+        raise HTTPException(
+            status_code=400, detail="缺少数据文件（请提供 data_file_id 或上传数据文件）"
+        )
+    try:
+        tpl_path = _get_file(req.template_file_id)
+        info = template_parser.parse_template(tpl_path)
+        ds = data_reader.read_data(_get_file(req.data_file_id))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _handle_error(e)
+    if not ds.is_tabular or not ds.rows:
+        raise HTTPException(
+            status_code=400, detail="数据文件为空或无表格数据，无法批量生成"
+        )
+    missing_cols = [
+        m.source_column
+        for m in req.mappings
+        if m.source_type == "column"
+        and m.source_column
+        and m.source_column not in ds.columns
+    ]
+    if missing_cols:
+        raise HTTPException(
+            status_code=400,
+            detail=f"映射的列不存在于数据文件: {', '.join(sorted(set(missing_cols)))}"
+        )
+    mappings: list[FieldMapping] = []
+    for item in req.mappings:
+        value = item.value
+        if item.source_type == "image" and value:
+            value = str(_get_file(value))
+        mappings.append(
+            FieldMapping(
+                template_field=item.template_field,
+                source_type=item.source_type,
+                source_column=item.source_column,
+                constant_value=item.constant_value,
+                value=value,
+            )
+        )
+    return tpl_path, info, ds, mappings
+
+
+def _run_batch_worker(
+    batch_id: str,
+    req: GenerateBatchRequest,
+    tpl_path: Path,
+    info: TemplateInfo,
+    ds: DataSource,
+    mappings: list[FieldMapping],
+) -> None:
+    """后台线程：执行 report_service.generate_batch 并更新任务状态与进度。"""
+    from formora.services.config import Config
+    from formora.services.report_service import generate_batch as service_generate_batch
+
+    def _update(**fields: object) -> None:
+        with _BATCHES_LOCK:
+            rec = _BATCHES.get(batch_id)
+            if rec is None:
+                return
+            for key, value in fields.items():
+                setattr(rec, key, value)
+
+    _update(status="running")
+    try:
+        task = ReportTask(
+            name="批量报告",
+            template_path=tpl_path,
+            data_source=ds,
+            mappings=mappings,
+            status="generating",
+            created_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        cfg = Config(_WORK_DIR / "config.json")
+        cfg.set("output_dir", str(_WORK_DIR / "batch_output"))
+        if req.auto_chart is not None:
+            cfg.set("auto_chart", req.auto_chart)
+        state = SimpleNamespace(
+            config=cfg,
+            template=info,
+            data=ds,
+            mappings=mappings,
+            task=task,
+        )
+        results, errors = service_generate_batch(state)
+
+        files: list[dict] = []
+        for path_str in results:
+            out = Path(path_str)
+            task_id = _register_task(out, "docx")
+            files.append(
+                {
+                    "file_name": out.name,
+                    "path": str(out),
+                    "task_id": task_id,
+                    "download_url": f"/api/report/{task_id}/download",
+                }
+            )
+        _update(
+            status="done",
+            completed=len(results) + len(errors),
+            files=files,
+            errors=errors,
+        )
+    except Exception as e:
+        logger.exception("异步批量生成失败 %s: %s", batch_id, e)
+        _update(status="failed", error=str(_handle_error(e).detail))
+
+
 # ---------- 端点 ----------
 
 
@@ -368,6 +573,7 @@ def health() -> dict:
         "version": formora.__version__,
         "files_cached": len(_FILES),
         "tasks": len(_TASKS),
+        "batches": len(_BATCHES),
         "auth_enabled": bool(_API_KEY),
         "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
     }
@@ -418,7 +624,10 @@ async def read_data(
         "kind": ds.kind,
         "columns": list(ds.columns),
         "rows_preview": ds.rows[:5],
-        "row_count": len(ds.rows),
+        "row_count": ds.row_count,
+        "truncated": ds.truncated,
+        "encoding": ds.encoding,
+        "sep": ds.sep,
     }
 
 
@@ -489,11 +698,22 @@ async def generate_report(
         columns = list(ds.columns)
         if ds.rows:
             if req.row_index is not None:
-                if req.row_index < 0 or req.row_index >= len(ds.rows):
+                if req.row_index < 0 or req.row_index >= ds.row_count:
                     raise HTTPException(
                         status_code=400, detail=f"row_index 越界: {req.row_index}"
                     )
-                row = ds.rows[req.row_index]
+                if ds.truncated and ds.kind == "csv" and ds.encoding and ds.sep:
+                    try:
+                        row = data_reader.load_row(
+                            ds.path,
+                            encoding=ds.encoding,
+                            sep=ds.sep,
+                            row_index=req.row_index,
+                        )
+                    except (IndexError, UserError) as e:
+                        raise HTTPException(status_code=400, detail=str(e))
+                else:
+                    row = ds.rows[req.row_index]
             else:
                 row = ds.rows[0]
         elif any(m.source_type == "column" for m in req.mappings):
@@ -571,117 +791,16 @@ async def generate_batch(
 
     返回每份生成文件的 file_name / path / task_id / download_url，以及失败信息列表。
 
-    注意：批量生成是耗时操作（每份报告都要重新解析模板并渲染 DOCX）。当前为同步实现，
-    请求会阻塞直到全部生成完成，适合单机/内网调用与批量份数较少（如课程报告）的场景。
+    注意：批量生成是耗时操作（每份报告都要重新解析模板并渲染 DOCX）。同步版会阻塞
+    直到全部生成完成，适合单机/内网调用与批量份数较少（如课程报告）的场景。
 
-    【后续方案：异步任务队列】
-    若批量份数大或并发高，应改为异步：
-    1. 本端点仅校验参数并创建批量任务记录，返回 batch_id（202 Accepted）；
-    2. 后台 worker（Celery / RQ，或 FastAPI BackgroundTasks + 线程池）消费队列，
-       逐行调用 report_service.generate_batch 并更新任务状态与进度；
-    3. 客户端通过 GET /api/report/batch/{batch_id} 轮询状态，完成后获取文件列表；
-    4. 文件与任务记录沿用现有 _TASKS TTL 清理机制，超时未查询自动回收。
+    大批量/高并发请改用异步版：POST /api/report/generate_batch_async 立即返回
+    batch_id（202 Accepted），后台线程执行生成，客户端通过
+    GET /api/report/batch/{batch_id} 轮询状态、进度与结果。
     """
-    # ---- 解析请求体（JSON 或 multipart） ----
-    content_type = request.headers.get("content-type", "")
-    is_form = content_type.startswith("multipart/form-data") or content_type.startswith(
-        "application/x-www-form-urlencoded"
-    )
-    req: GenerateBatchRequest
-    if is_form:
-        form = await request.form()
-        template_file_id = str(form.get("template_file_id") or "").strip()
-        mappings_raw = form.get("mappings") or "[]"
-        try:
-            mappings_data = json.loads(mappings_raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组字符串")
-        if not isinstance(mappings_data, list):
-            raise HTTPException(status_code=400, detail="mappings 必须是 JSON 数组")
-        auto_chart_raw = form.get("auto_chart")
-        auto_chart = None
-        if auto_chart_raw is not None:
-            auto_chart = str(auto_chart_raw).strip().lower() in ("1", "true", "yes", "on")
-        try:
-            req = GenerateBatchRequest(
-                template_file_id=template_file_id,
-                mappings=[MappingItem(**m) for m in mappings_data],
-                data_file_id=str(form.get("data_file_id") or "").strip() or None,
-                auto_chart=auto_chart,
-            )
-        except (ValidationError, TypeError, ValueError) as e:
-            raise HTTPException(status_code=400, detail=f"mappings 格式错误: {e}")
-        uploaded = form.get("file")
-        if uploaded is not None and getattr(uploaded, "filename", None):
-            if req.data_file_id:
-                raise HTTPException(
-                    status_code=400, detail="不能同时提供 data_file_id 与文件上传"
-                )
-            req.data_file_id = _save_upload(uploaded, "data")
-    else:
-        try:
-            body = await request.json()
-        except Exception:
-            raise HTTPException(status_code=400, detail="请求体必须是合法 JSON")
-        try:
-            req = GenerateBatchRequest.model_validate(body)
-        except ValidationError as e:
-            raise HTTPException(status_code=400, detail=f"请求参数错误: {e}")
-
-    # ---- 参数校验 ----
-    if not req.template_file_id:
-        raise HTTPException(status_code=400, detail="缺少 template_file_id")
-    if not req.mappings:
-        raise HTTPException(status_code=400, detail="映射列表 mappings 不能为空")
-    if not req.data_file_id:
-        raise HTTPException(
-            status_code=400, detail="缺少数据文件（请提供 data_file_id 或上传数据文件）"
-        )
-
-    # ---- 模板与数据 ----
-    try:
-        tpl_path = _get_file(req.template_file_id)
-        info = template_parser.parse_template(tpl_path)
-        ds = data_reader.read_data(_get_file(req.data_file_id))
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise _handle_error(e)
-
-    if not ds.is_tabular or not ds.rows:
-        raise HTTPException(
-            status_code=400, detail="数据文件为空或无表格数据，无法批量生成"
-        )
-
-    # 列映射校验：避免静默填空
-    missing_cols = [
-        m.source_column
-        for m in req.mappings
-        if m.source_type == "column"
-        and m.source_column
-        and m.source_column not in ds.columns
-    ]
-    if missing_cols:
-        raise HTTPException(
-            status_code=400,
-            detail=f"映射的列不存在于数据文件: {', '.join(sorted(set(missing_cols)))}",
-        )
-
-    # 构造 FieldMapping 列表（图片 file_id -> 本地路径）
-    mappings: list[FieldMapping] = []
-    for item in req.mappings:
-        value = item.value
-        if item.source_type == "image" and value:
-            value = str(_get_file(value))
-        mappings.append(
-            FieldMapping(
-                template_field=item.template_field,
-                source_type=item.source_type,
-                source_column=item.source_column,
-                constant_value=item.constant_value,
-                value=value,
-            )
-        )
+    # ---- 解析请求体（JSON 或 multipart）并校验参数 ----
+    req = await _parse_batch_request(request)
+    tpl_path, info, ds, mappings = _prepare_batch(req)
 
     # ---- 复用 report_service.generate_batch（同步执行） ----
     from formora.services.config import Config
@@ -733,6 +852,72 @@ async def generate_batch(
         "failed": len(errors),
         "files": files,
         "errors": errors,
+    }
+
+
+@app.post("/api/report/generate_batch_async")
+async def generate_batch_async(
+    request: Request,
+    _auth: None = Depends(_verify_api_key),
+) -> JSONResponse:
+    """批量生成多份 DOCX（异步版）。
+
+    参数与同步端点一致（JSON 或 multipart）。校验通过后立即返回 202 + batch_id，
+    后台线程执行 report_service.generate_batch；客户端轮询
+    GET /api/report/batch/{batch_id} 获取状态（pending/running/done/failed）、
+    进度（completed/total）与生成文件列表。任务记录沿用 TTL 清理机制。
+    """
+    req = await _parse_batch_request(request)
+    tpl_path, info, ds, mappings = _prepare_batch(req)
+
+    batch_id = f"batch_{uuid.uuid4().hex}"
+    record = _BatchRecord(
+        batch_id=batch_id,
+        status="pending",
+        total=len(ds.rows),
+        completed=0,
+        created_at=_now(),
+    )
+    with _BATCHES_LOCK:
+        _BATCHES[batch_id] = record
+    _prune_expired()
+
+    threading.Thread(
+        target=_run_batch_worker,
+        args=(batch_id, req, tpl_path, info, ds, mappings),
+        name=f"formora-batch-{batch_id}",
+        daemon=True,
+    ).start()
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "batch_id": batch_id,
+            "status": record.status,
+            "total": record.total,
+            "query_url": f"/api/report/batch/{batch_id}",
+        },
+    )
+
+
+@app.get("/api/report/batch/{batch_id}")
+def get_batch_status(
+    batch_id: str, _auth: None = Depends(_verify_api_key)
+) -> dict:
+    """查询异步批量生成任务：状态、进度、生成文件列表或错误。"""
+    with _BATCHES_LOCK:
+        rec = _BATCHES.get(batch_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="批量任务不存在或已过期")
+    return {
+        "batch_id": rec.batch_id,
+        "status": rec.status,
+        "total": rec.total,
+        "completed": rec.completed,
+        "files": rec.files,
+        "errors": rec.errors,
+        "error": rec.error,
+        "created_at": rec.created_at,
     }
 
 

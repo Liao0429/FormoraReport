@@ -58,6 +58,13 @@ DEFAULTS = {
     "privacy": {
         "upload_warning_shown": False,
     },
+    "chart": {
+        "colors": ["#1f77b4", "#ff7f0e"],
+        "figsize": [6, 4],
+        "dpi": 150,
+        "grid": True,
+        "font_size": 10,
+    },
 }
 
 
@@ -151,6 +158,10 @@ class Config:
             ai = dict(DEFAULTS["ai"])
             ai.update(merged["ai"])
             merged["ai"] = ai
+        if isinstance(merged.get("chart"), dict):
+            chart_cfg = dict(DEFAULTS["chart"])
+            chart_cfg.update(merged["chart"])
+            merged["chart"] = chart_cfg
         return merged
 
     def save(self):

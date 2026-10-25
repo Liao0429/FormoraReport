@@ -348,11 +348,24 @@ def generate_batch(
 
     results: list[str] = []
     errors: list[str] = []
-    # 性能说明（B1）：generator.generate_report 每次调用都会重新读取磁盘模板并新建
-    # DocxTemplate（zip 解析开销较大），是批量生成的主要耗时瓶颈。
-    # 低风险优化方向：给 generator 增加可选参数接收预加载的 DocxTemplate/BytesIO，
-    # 由本循环在循环外只加载一次并复用；暂不实施以免改动核心生成器接口。
-    for i, row in enumerate(data.rows):
+    # 性能说明（B1）：generator 层已实现模板解析缓存（键 = 模板路径+修改时间+大小），
+    # 批量循环中同一模板的 docx zip 只解析一次，后续每行通过深拷贝骨架获得独立
+    # DocxTemplate，避免每次调用 generate_report 都重新读取并解析模板。
+    # 缓存由 RLock 保护，可安全用于 QThread 并发批量生成。
+    # 大文件预览模式：data.rows 只含前 N 行预览，改用流式迭代全量行；
+    # 普通模式直接迭代内存中的全量行。
+    if getattr(data, "truncated", False) and data.kind == "csv":
+        from formora.core import data_reader
+
+        row_iter = data_reader.iter_csv_rows(
+            data.path,
+            encoding=data.encoding or "utf-8-sig",
+            sep=data.sep or ",",
+        )
+    else:
+        row_iter = iter(data.rows)
+
+    for i, row in enumerate(row_iter):
         # 复用统一映射解析，避免与单份生成逻辑分叉（含 text/constant 等所有类型）
         ctx = mapper.resolve_values(state.mappings, row=row)
         for m in state.mappings:

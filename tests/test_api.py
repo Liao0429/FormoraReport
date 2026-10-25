@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ def client():
     """每个测试独立状态：清空内存字典，避免顺序耦合。"""
     api._FILES.clear()
     api._TASKS.clear()
+    api._BATCHES.clear()
     api._RATE_LIMITER.clear()
     return TestClient(app)
 
@@ -61,6 +63,22 @@ def _generate(client: TestClient, template_fid: str, mappings=None, **kw) -> dic
     r = client.post("/api/report/generate", json=req)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def _wait_batch(client: TestClient, batch_id: str, timeout: float = 30.0) -> dict:
+    """轮询异步批量任务直到完成（done/failed），返回任务状态 JSON。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        r = client.get(f"/api/report/batch/{batch_id}")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        if data["status"] in ("done", "failed"):
+            return data
+        time.sleep(0.05)
+    raise AssertionError(
+        f"批量任务 {batch_id} 在 {timeout}s 内未完成，最后状态: "
+        f"{client.get(f'/api/report/batch/{batch_id}').json()}"
+    )
 
 
 class TestHealth:
@@ -559,3 +577,128 @@ class TestGenerateBatch:
         # 鉴权通过后进入参数校验：空映射应返回 400 而非 401
         assert r2.status_code == 400
         assert "mappings" in r2.json()["detail"]
+
+
+class TestGenerateBatchAsync:
+    """POST /api/report/generate_batch_async + GET /api/report/batch/{batch_id}。"""
+
+    @pytest.fixture()
+    def isolated_history(self, tmp_path, monkeypatch):
+        """把任务历史写入临时目录，避免批量生成污染真实用户数据。"""
+        import formora.services.history as history_mod
+
+        monkeypatch.setattr(history_mod, "HISTORY_PATH", tmp_path / "history.jsonl")
+
+    @pytest.fixture()
+    def high_rate_limit(self, monkeypatch):
+        """放宽限流，避免轮询批量状态时触发 429。"""
+        import formora.api as api_mod
+
+        monkeypatch.setattr(
+            api_mod, "_RATE_LIMITER", api_mod._RateLimiter(max_requests=100_000)
+        )
+
+    @staticmethod
+    def _batch_mappings() -> list[dict]:
+        return [
+            {
+                "template_field": "实验名称",
+                "source_type": "constant",
+                "constant_value": "异步批量实验",
+            },
+            {
+                "template_field": "姓名",
+                "source_type": "column",
+                "source_column": "项目",
+            },
+        ]
+
+    @staticmethod
+    def _submit(client: TestClient, template_fid: str, data_fid: str, **kw):
+        body = {
+            "template_file_id": template_fid,
+            "data_file_id": data_fid,
+            "auto_chart": False,
+            "mappings": TestGenerateBatchAsync._batch_mappings(),
+        }
+        body.update(kw)
+        return client.post("/api/report/generate_batch_async", json=body)
+
+    def test_submit_returns_202(
+        self,
+        client: TestClient,
+        template_fid: str,
+        data_fid: str,
+        isolated_history,
+        high_rate_limit,
+    ):
+        """提交异步批量任务：202 + batch_id + pending + total。"""
+        r = self._submit(client, template_fid, data_fid)
+        assert r.status_code == 202, r.text
+        data = r.json()
+        assert data["batch_id"]
+        # 线程可能已开始执行：pending 或 running 均可
+        assert data["status"] in ("pending", "running"), data["status"]
+        assert data["total"] == 4
+        assert data["query_url"].startswith("/api/report/batch/")
+
+    def test_poll_until_done(
+        self,
+        client: TestClient,
+        template_fid: str,
+        data_fid: str,
+        isolated_history,
+        high_rate_limit,
+    ):
+        """轮询异步任务直到 done：进度=总数，文件可下载。"""
+        r = self._submit(client, template_fid, data_fid)
+        assert r.status_code == 202, r.text
+        batch_id = r.json()["batch_id"]
+        info = _wait_batch(client, batch_id)
+        assert info["status"] == "done", info
+        assert info["total"] == 4
+        assert info["completed"] == 4
+        assert len(info["files"]) == 4
+        assert info["errors"] == []
+        for item in info["files"]:
+            assert item["file_name"].endswith(".docx")
+            assert item["task_id"]
+            dl = client.get(item["download_url"])
+            assert dl.status_code == 200
+            assert dl.content[:2] == b"PK"
+
+    def test_unknown_batch_id_404(self, client: TestClient):
+        """未知 batch_id → 404。"""
+        r = client.get("/api/report/batch/not_exist")
+        assert r.status_code == 404
+
+    def test_auth_required(self, monkeypatch):
+        """配置 FORMORA_API_KEY 后，无 token 提交异步任务返回 401。"""
+        import formora.api as api_mod
+        from fastapi.testclient import TestClient as TC
+
+        monkeypatch.setattr(api_mod, "_API_KEY", "test-key")
+        c = TC(app)
+        body = {"template_file_id": "x", "mappings": []}
+        r = c.post("/api/report/generate_batch_async", json=body)
+        assert r.status_code == 401
+        r2 = c.post(
+            "/api/report/generate_batch_async",
+            json=body,
+            headers={"Authorization": "Bearer test-key"},
+        )
+        # 鉴权通过后进入参数校验：空映射应返回 400 而非 401
+        assert r2.status_code == 400
+        assert "mappings" in r2.json()["detail"]
+
+    def test_missing_data_400(self, client: TestClient, template_fid: str):
+        """无数据文件 → 400。"""
+        r = client.post(
+            "/api/report/generate_batch_async",
+            json={
+                "template_file_id": template_fid,
+                "mappings": self._batch_mappings(),
+            },
+        )
+        assert r.status_code == 400
+        assert "数据" in r.json()["detail"]

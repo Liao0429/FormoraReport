@@ -68,6 +68,9 @@ class MappingPage(QWidget):
         self.state = state
         self.navigate = navigate
         self._val_edits: dict[int, QLineEdit] = {}
+        self._user_fields: set[str] = set()  # 用户手动填写过的字段名，AI 建议不覆盖
+        self._filling = False  # 表格重建中，忽略控件信号，避免误标用户字段
+        self._syncing = False  # 程序化同步映射中，不算用户手动修改
         self._ai_thread: _TaskThread | None = None
         self._batch_thread: _TaskThread | None = None
         self._gen_thread: _TaskThread | None = None
@@ -115,6 +118,8 @@ class MappingPage(QWidget):
         self.row_combo = QComboBox()
         self.row_combo.currentIndexChanged.connect(lambda _: self._sync_row_combo())
         opts.addWidget(self.row_combo)
+        self.truncated_label = QLabel("")
+        opts.addWidget(self.truncated_label)
         self.chart_check = QCheckBox("自动生成实验数据图表并插入到「图表」占位符")
         self.chart_check.setChecked(True)
         opts.addWidget(self.chart_check)
@@ -166,6 +171,7 @@ class MappingPage(QWidget):
             return
         if not state.mappings:
             state.mappings = mapper.auto_map(state.template, state.data)
+            self._user_fields.clear()
 
         self.row_combo.clear()
         if state.data and state.data.is_tabular:
@@ -175,47 +181,60 @@ class MappingPage(QWidget):
                 )
                 self.row_combo.addItem(label)
             self.row_combo.setCurrentIndex(0)
+            if getattr(state.data, "truncated", False):
+                self.truncated_label.setText(
+                    f"⚠️ 文件过大，仅预览前 {len(state.data.rows)} 行（共 {state.data.row_count} 行）"
+                )
+            else:
+                self.truncated_label.setText("")
         else:
             self.row_combo.addItem("（无表格数据）")
+            self.truncated_label.setText("")
 
         self._fill_table()
 
     def _fill_table(self):
-        self._val_edits.clear()
-        self.table.setRowCount(0)
-        for m in self.state.mappings:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
+        self._filling = True
+        try:
+            self._val_edits.clear()
+            self.table.setRowCount(0)
+            for m in self.state.mappings:
+                row = self.table.rowCount()
+                self.table.insertRow(row)
 
-            field_item = QTableWidgetItem(m.template_field)
-            field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 0, field_item)
+                field_item = QTableWidgetItem(m.template_field)
+                field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(row, 0, field_item)
 
-            # 默认类型：图片字段 -> 图片；有列匹配 -> 数据列；否则常量
-            default_type = (
-                "图片"
-                if is_image_field(m.template_field)
-                else ("数据列" if m.source_type == "column" else "常量")
-            )
-            type_combo = QComboBox()
-            type_combo.addItems(["数据列", "常量", "图片"])
-            type_combo.setCurrentText(default_type)
-            type_combo.currentIndexChanged.connect(
-                lambda _, r=row: self._type_changed(r)
-            )
-            self.table.setCellWidget(row, 1, type_combo)
+                # 默认类型：图片字段 -> 图片；有列匹配 -> 数据列；否则常量
+                default_type = (
+                    "图片"
+                    if is_image_field(m.template_field)
+                    else ("数据列" if m.source_type == "column" else "常量")
+                )
+                type_combo = QComboBox()
+                type_combo.addItems(["数据列", "常量", "图片"])
+                type_combo.setCurrentText(default_type)
+                type_combo.currentIndexChanged.connect(
+                    lambda _, r=row: self._type_changed(r)
+                )
+                self.table.setCellWidget(row, 1, type_combo)
 
-            col_combo = QComboBox()
-            if self.state.data and self.state.data.columns:
-                col_combo.addItems(self.state.data.columns)
-            col_combo.setCurrentText(m.source_column or "")
-            col_combo.currentTextChanged.connect(lambda _, r=row: self._col_changed(r))
-            self.table.setCellWidget(row, 2, col_combo)
+                col_combo = QComboBox()
+                if self.state.data and self.state.data.columns:
+                    col_combo.addItems(self.state.data.columns)
+                col_combo.setCurrentText(m.source_column or "")
+                col_combo.currentTextChanged.connect(
+                    lambda _, r=row: self._col_changed(r)
+                )
+                self.table.setCellWidget(row, 2, col_combo)
 
-            self._set_value_cell(row, default_type)
-            col_combo.setEnabled(default_type == "数据列")
+                self._set_value_cell(row, default_type)
+                col_combo.setEnabled(default_type == "数据列")
 
-        self._sync_row_combo()
+            self._sync_row_combo()
+        finally:
+            self._filling = False
 
     def _set_value_cell(self, row: int, source_type: str):
         """在「值」单元格放置文本编辑框或图片选择框。"""
@@ -253,6 +272,17 @@ class MappingPage(QWidget):
     def _value_edit(self, row: int) -> QLineEdit | None:
         return self._val_edits.get(row)
 
+    def _mark_user_edited(self, row: int) -> None:
+        """记录字段已被用户手动修改，AI 建议不得覆盖。
+
+        表格重建（_fill_table）与程序化同步（_collect_mappings）触发的
+        控件信号不算用户手动修改，避免首次进入页面时把所有字段误标为手动。
+        """
+        if self._filling or self._syncing:
+            return
+        if 0 <= row < len(self.state.mappings):
+            self._user_fields.add(self.state.mappings[row].template_field)
+
     # ---------- 交互回调 ----------
 
     def _remap(self):
@@ -260,6 +290,8 @@ class MappingPage(QWidget):
         if not self.state.template:
             return
         self.state.mappings = mapper.auto_map(self.state.template, self.state.data)
+        # 用户主动要求重新匹配：所有字段按规则重建，手动标记一并重置
+        self._user_fields.clear()
         self._fill_table()
         self.issues_text.setPlainText("已按数据列重新自动匹配。")
 
@@ -282,6 +314,7 @@ class MappingPage(QWidget):
         return {}
 
     def _type_changed(self, row: int):
+        self._mark_user_edited(row)
         t = self._current_type(row)
         col_combo = self.table.cellWidget(row, 2)
         col_combo.setEnabled(t == "数据列")
@@ -298,10 +331,12 @@ class MappingPage(QWidget):
             self._set_value_cell(row, "常量")
 
     def _col_changed(self, row: int):
+        self._mark_user_edited(row)
         if self._current_type(row) == "数据列":
             self._sync_row_combo()
 
     def _value_changed(self, row: int):
+        self._mark_user_edited(row)
         m = self.state.mappings[row]
         t = self._current_type(row)
         edit = self._value_edit(row)
@@ -325,6 +360,7 @@ class MappingPage(QWidget):
             "图片 (*.png *.jpg *.jpeg *.gif *.bmp);;所有文件 (*.*)",
         )
         if path:
+            self._mark_user_edited(row)
             m = self.state.mappings[row]
             m.source_type = "image"
             m.value = path
@@ -333,8 +369,12 @@ class MappingPage(QWidget):
                 edit.setText(path)
 
     def _collect_mappings(self):
-        for row in range(self.table.rowCount()):
-            self._value_changed(row)
+        self._syncing = True
+        try:
+            for row in range(self.table.rowCount()):
+                self._value_changed(row)
+        finally:
+            self._syncing = False
         return self.state.mappings
 
     # ---------- 生成（逻辑在 report_service） ----------
@@ -508,47 +548,48 @@ class MappingPage(QWidget):
             )
             return
 
-        # 覆盖确认：AI 会用常量覆盖用户已手动映射/填写的字段，需先提示
-        existing = [
-            m.template_field
-            for m in self.state.mappings
-            if m.source_type != "image"
-            and (
-                m.source_type == "column"
-                or (m.source_type == "constant" and m.constant_value)
-            )
-        ]
-        if existing:
-            ret = QMessageBox.question(
-                self,
-                "覆盖确认",
-                f"AI 辅助会用生成的内容覆盖以下 {len(existing)} 个已填写的字段：\n"
-                + "、".join(existing[:10])
-                + ("…" if len(existing) > 10 else "")
-                + "\n\n是否继续？",
-            )
-            if ret != QMessageBox.StandardButton.Yes:
-                return
-
         self.issues_text.setPlainText(
-            "⏳ AI 正在根据素材提取字段内容，请稍候…（可在生成过程中继续浏览其他页面）"
+            "⏳ AI 正在根据素材提取字段内容，请稍候…\n"
+            "你已手动填写的字段会被保留，AI 建议不会覆盖。"
         )
         QMessageBox.information(
             self,
             "提示",
-            "AI 只会依据素材生成内容；无依据的字段会标记为「待补充」，生成后请逐项检查再导出。",
+            "AI 只会依据素材生成内容；无依据的字段会标记为「待补充」。\n"
+            "你已手动填写的字段不会被 AI 覆盖，生成后请逐项检查再导出。",
         )
         self._set_busy(True)
-        self._ai_thread = _TaskThread(client.extract_fields, cfg, materials, fields)
+        self._ai_thread = _TaskThread(
+            client.try_extract_fields, cfg, materials, fields
+        )
         self._ai_thread.result_ready.connect(self._on_ai_done)
         self._ai_thread.error_raised.connect(self._on_ai_error)
         self._ai_thread.start()
 
     def _on_ai_done(self, result):
         self._set_busy(False)
-        from formora.services.ai_workflow import apply_ai_results
+        fields, error = result
+        if fields is None:
+            # AI 不可用（网络失败/未配置/返回异常）：自动回退规则映射，不阻塞用户
+            restored, _ = mapper.fallback_to_rule_mapping(
+                self.state.mappings,
+                self.state.template,
+                self.state.data,
+                self._user_fields,
+            )
+            self.state.task.log(
+                "warning", "dependency", f"AI 辅助失败，已回退规则映射：{error}"
+            )
+            self._fill_table()
+            self.issues_text.setPlainText(
+                f"⚠️ AI 请求失败：{error}\n"
+                f"已自动回退到规则映射（{restored} 个字段），你可以继续手动填写或稍后重试。"
+            )
+            return
 
-        applied, confirmed = apply_ai_results(self.state.mappings, result)
+        applied, confirmed, preserved = mapper.apply_ai_suggestions(
+            self.state.mappings, fields, self._user_fields
+        )
         self.state.task.log("info", "system", f"AI 辅助填充 {applied} 个字段")
         self._fill_table()
         note = [
@@ -556,9 +597,25 @@ class MappingPage(QWidget):
             "标记「待确认」的字段请务必人工核对后补全。",
             "已处理字段：" + ("、".join(confirmed[:20]) if confirmed else "无"),
         ]
+        if preserved:
+            note.append(
+                "已保留你手动填写的字段："
+                + "、".join(preserved[:20])
+                + ("…" if len(preserved) > 20 else "")
+            )
         self.issues_text.setPlainText("\n".join(note))
 
     def _on_ai_error(self, msg):
         self._set_busy(False)
-        self.issues_text.setPlainText(f"AI 请求失败：{msg}")
-        QMessageBox.critical(self, "AI 失败", msg)
+        # 未知异常同样回退规则映射，保证用户不被阻塞
+        restored, _ = mapper.fallback_to_rule_mapping(
+            self.state.mappings,
+            self.state.template,
+            self.state.data,
+            self._user_fields,
+        )
+        self._fill_table()
+        self.issues_text.setPlainText(
+            f"AI 辅助异常：{msg}\n"
+            f"已自动回退到规则映射（{restored} 个字段），你可以继续使用。"
+        )

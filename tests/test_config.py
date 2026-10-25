@@ -45,3 +45,30 @@ def test_ai_enabled_default_true():
     tmp = Path(tempfile.mkdtemp()) / "config.json"
     c = Config(tmp)
     assert c.get("ai")["enabled"] is True
+
+def test_config_chart_defaults():
+    """图表样式配置默认值：颜色/尺寸/DPI/网格/字号。"""
+    tmp = Path(tempfile.mkdtemp()) / "config.json"
+    c = Config(tmp)
+    chart_cfg = c.get("chart")
+    assert chart_cfg["colors"] == ["#1f77b4", "#ff7f0e"]
+    assert chart_cfg["figsize"] == [6, 4]
+    assert chart_cfg["dpi"] == 150
+    assert chart_cfg["grid"] is True
+    assert chart_cfg["font_size"] == 10
+
+
+def test_config_chart_roundtrip_and_partial_merge():
+    """保存部分 chart 配置后，缺失字段仍回退默认值。"""
+    tmp = Path(tempfile.mkdtemp()) / "config.json"
+    c = Config(tmp)
+    c.set("chart", {"dpi": 100, "grid": False})
+    c.save()
+    c2 = Config(tmp)
+    chart_cfg = c2.get("chart")
+    assert chart_cfg["dpi"] == 100
+    assert chart_cfg["grid"] is False
+    # 未保存的字段保持默认
+    assert chart_cfg["colors"] == ["#1f77b4", "#ff7f0e"]
+    assert chart_cfg["figsize"] == [6, 4]
+    assert chart_cfg["font_size"] == 10

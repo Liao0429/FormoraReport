@@ -79,6 +79,78 @@ def auto_map(template: TemplateInfo, data: DataSource | None) -> list[FieldMappi
     return mappings
 
 
+def apply_ai_suggestions(
+    mappings: list[FieldMapping],
+    ai_result: list[dict],
+    protected_fields: set[str] | None = None,
+) -> tuple[int, list[str], list[str]]:
+    """把 AI 抽取结果写回字段映射，但跳过用户已手动填写的字段。
+
+    与 ai_workflow.apply_ai_results 的区别：
+    - 用户手动填写/编辑过的字段（protected_fields）优先保留，AI 建议不覆盖；
+    - 图片字段始终跳过；
+    - 返回被保留的用户字段名，便于 UI 提示「已保留手动填写」。
+
+    返回：(applied 字段数, confirmed 字段名列表["字段名（待确认）"], 保留的用户字段名列表)
+    """
+    protected = set(protected_fields or ())
+    by_field = {m.template_field: m for m in mappings}
+    applied = 0
+    confirmed: list[str] = []
+    preserved: list[str] = []
+    for item in ai_result:
+        fname = item.get("field", "")
+        value = item.get("value", "")
+        needs = bool(item.get("needs_confirmation"))
+        m = by_field.get(fname)
+        if m is None or m.source_type == "image":
+            continue
+        if fname in protected:
+            preserved.append(fname)
+            continue
+        m.source_type = "constant"
+        m.constant_value = value
+        m.source = item.get("source", "")
+        m.needs_confirmation = needs
+        confirmed.append(f"{fname}" + ("（待确认）" if needs else ""))
+        applied += 1
+    return applied, confirmed, preserved
+
+
+def fallback_to_rule_mapping(
+    mappings: list[FieldMapping],
+    template: TemplateInfo | None,
+    data: DataSource | None,
+    protected_fields: set[str] | None = None,
+) -> tuple[int, list[str]]:
+    """AI 映射失败时自动回退到规则自动映射，保证用户不被阻塞。
+
+    只更新未被用户手动修改、且非图片的字段；用户手动填写的映射保持不变。
+    返回：(回退更新字段数, 字段名列表)
+    """
+    protected = set(protected_fields or ())
+    if not template:
+        return 0, []
+    rule_by_field = {m.template_field: m for m in auto_map(template, data)}
+    restored = 0
+    fields: list[str] = []
+    for m in mappings:
+        if m.template_field in protected or m.source_type == "image":
+            continue
+        r = rule_by_field.get(m.template_field)
+        if r is None:
+            continue
+        m.source_type = r.source_type
+        m.source_column = r.source_column
+        m.constant_value = r.constant_value
+        m.value = None
+        m.source = ""
+        m.needs_confirmation = False
+        restored += 1
+        fields.append(m.template_field)
+    return restored, fields
+
+
 def _format_value(v) -> str:
     """把数据值格式化为适合进报告文本的字符串。
 
